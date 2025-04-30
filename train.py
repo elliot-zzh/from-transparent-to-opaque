@@ -2,12 +2,15 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
+from torch.utils.tensorboard import SummaryWriter
 from torch.optim import AdamW, Adam
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from transformers import AutoTokenizer, AutoModelForCausalLM, DynamicCache, OffloadedCache
 import datasets
 from peft import get_peft_model, LoraConfig
+
+from tqdm import tqdm
 
 import gc
 import re
@@ -21,6 +24,8 @@ import matplotlib.pyplot as plt
 from math_verify import parse, verify
 
 torch.manual_seed(42)
+
+writer = SummaryWriter('runs/demo')
 
 # load the model
 model_name = 'Qwen/Qwen2.5-1.5B-Instruct'
@@ -76,14 +81,17 @@ class CurrentStepMixerGater(nn.Module):
         return self.act(self.w(x))
 
 class Gate(nn.Module):
-    def __init__(self, embed_dim, inject_scale, dropout_rate=0.0):
+    def __init__(self, embed_dim, inject_scale, zero_init=True, dropout_rate=0.0):
         super().__init__()
         self.embed_dim = embed_dim
         self.dropout_rate = dropout_rate
         self.inject_scale = inject_scale
 
         self.norm = nn.RMSNorm(embed_dim)
-        self.gate = nn.Parameter(torch.zeros(embed_dim)) # all from model embeddings first for stability
+        if zero_init:
+            self.gate = nn.Parameter(torch.zeros(embed_dim)) # all from model embeddings first for stability
+        else:
+            self.gate = nn.Parameter(torch.ones(embed_dim) * 0.5)
         self.time_mixing_gate = CurrentStepMixerGater(embed_dim)
 
     def forward(self, hidden, embed):
@@ -114,7 +122,7 @@ model = get_peft_model(model, peft_config)
 model.print_trainable_parameters()
 
 # Gater
-gater = Gate(1536, 0.01, dropout_rate=0.1)
+gater = Gate(1536, 0.01)
 
 # load VAE
 vae = VAE(1536, 256, 1536 * 4)
@@ -129,6 +137,7 @@ gater = gater.to(device)
 im_end, eot = tokenizer('<|im_end|><|endoftext|>').input_ids
 
 hidden_layer_num = 18
+depth_start_layer_num = 12
 
 def cleanup():
     gc.collect()
@@ -144,16 +153,22 @@ def tokenize(text, direct=False, max_length=1024, pad=False, device=device):
     attn_mask = res.attention_mask.to(device)
     return input_ids, attn_mask
 
-def sampler(input_ids, attn_mask, temperature=0.7, topk=16, max_length=2048, num=16, min_p=0.02, gc_interval=64, hidden_dropout_rate=0.02):
+
+# A lot of hacking here. For details please refer to
+# https://github.com/huggingface/transformers/blob/main/src/transformers/models/llama/
+# and
+# https://github.com/huggingface/transformers/blob/main/src/transformers/models/qwen2/
+def sampler(input_ids, attn_mask, temperature=0.7, topk=16, max_length=2048, num=16, min_p=0.02, gc_interval=64, hidden_dropout_rate=0.02, depth=0):
     model.eval()
     vae.eval()
     gater.eval()
     
     # tokenize
     problem_batch_size = input_ids.shape[0]
-    problem_len = input_ids.shape[1]
     cache_pos = torch.arange(input_ids.shape[1], dtype=torch.long).to(device)
     kv_cache = DynamicCache()
+    if depth > 0:
+        deep_kv_cache = [DynamicCache() for _ in range(depth)]
 
     # prefill the problem
     with torch.amp.autocast(device_type=str(device), dtype=torch.float16):
@@ -162,7 +177,7 @@ def sampler(input_ids, attn_mask, temperature=0.7, topk=16, max_length=2048, num
     last_hidden = outputs.hidden_states[hidden_layer_num]
     hidden_cache = torch.Tensor(problem_batch_size, 0, 256).to(device)
 
-    text_end_appeared = False # if the first <｜end▁of▁sentence｜>
+    # text_end_appeared = False # if the first <｜end▁of▁sentence｜>
     gen_all_done = False
 
     text_end_mask = torch.ones(problem_batch_size, dtype=torch.int8).to(device) # 1 -> not ended
@@ -172,14 +187,34 @@ def sampler(input_ids, attn_mask, temperature=0.7, topk=16, max_length=2048, num
 
     hidden_stream = torch.cuda.Stream() # an extra cuda stream for hidden vector processing
 
-    for i in range(max_length):
+    for i in tqdm(range(max_length), desc='sampling progress'):
         with torch.cuda.stream(hidden_stream):
             with torch.amp.autocast(device_type=str(device), dtype=torch.float16):
                 last_hidden = outputs.hidden_states[hidden_layer_num]
                 hidden_cache = torch.cat([hidden_cache, F.dropout(vae(last_hidden[:, -1:, :], compressing=True), p=hidden_dropout_rate, training=True)], dim=1)
                 uncompressed_hidden = vae.uncompress(hidden_cache[:, -1:, :])
-            
-        if i % 128 == 0: print(f'sampling progress: {i / max_length:.2f}', end=' ', flush=True)
+                
+                # more depth -- model looping
+                if depth > 0:
+                    deep_cache_pos = cache_pos[input_ids.shape[1] - 1:].unsqueeze(0) - input_ids.shape[1] + 1
+                    causal_mask = model._update_causal_mask(
+                        attention_mask=attn_mask, input_tensor=uncompressed_hidden, cache_pos=deep_cache_pos, past_key_values=deep_kv_cache, output_attentions=False
+                    )
+                    pos_embed = model.rotary_emb(uncompressed_hidden, deep_cache_pos)
+                    for depth_i in range(depth):
+                        for layer_i in range(depth_start_layer_num, hidden_layer_num):
+                            last_hidden = model.model.layers[layer_i](
+                                last_hidden,
+                                attention_mask=causal_mask,
+                                position_ids=deep_cache_pos,
+                                cache_position=deep_cache_pos,
+                                past_key_values=deep_kv_cache[depth_i],
+                                output_attentions=False,
+                                use_cache=True,
+                                position_embeddings=pos_embed,
+                            )[0]
+                    uncompressed_hidden = last_hidden
+                    
         logits = outputs.logits[:, -1, :].float() # (problem_batch_size, vocab_size)
 
         if i % gc_interval == 0:
@@ -213,9 +248,10 @@ def sampler(input_ids, attn_mask, temperature=0.7, topk=16, max_length=2048, num
             torch.cuda.current_stream().wait_stream(hidden_stream)
             embeds = gater(uncompressed_hidden, embeds)
             outputs = model(inputs_embeds=embeds, attention_mask=attn_mask, output_hidden_states=True, cache_position=cache_pos, return_dict=True, use_cache=True, past_key_values=kv_cache)
-
-    print('sampling done')
+            
     cleanup()
+    if depth > 0:
+        return res, hidden_cache, text_end_indices, attn_mask
     return res, hidden_cache, text_end_indices, attn_mask
 
 boxed_match = re.compile(r'\\boxed\{[^}]*\}')
@@ -282,8 +318,8 @@ max_sample_length = 512
 l_cache_length = 400
 sample_num = 16
 sample_topk = 12
-sample_temperature = 0.6
-sample_problem_batch = 40
+sample_temperature = 0.7
+sample_problem_batch = 20
 sample_problem_sub_batch = 10
 acc_check_only = False
 train_gc_interval = 15
@@ -294,12 +330,15 @@ hidden_regularization_rate = 1
 hidden_dropout_rate = 0.05
 hidden_reg_len_bonus_a = 64
 hidden_reg_len_bonus_high = 32
+hidden_updating_rate = 0.02
 
 # gating value bonus
-gating_value_bonus = 0.2 # should be larger? eg 0.4 or 0.5
-gating_value_lambda = 5
+gating_value_bonus = 0.4
 gating_value_decay = 0.95
+gating_value_lambda = 5
 gating_bonus_update_step = 100
+
+looping_depth = 0 # not ready for depth > 0 yet
 
 data_train = DataLoader(dataset(data_train), batch_size=sample_problem_batch, shuffle=True)
 data_test = DataLoader(dataset(data_test), batch_size=sample_problem_batch)
@@ -335,13 +374,13 @@ while step <= total_steps:
             input_ids, problem_attn_mask = tokenize(sum([[prompt + i + prompt_suffix] * sample_num for i in problem], []), direct=True)
             for i in range(0, sample_problem_batch, sample_problem_sub_batch):
                 if init_res:
-                    res_, hidden_cache_, text_end_indices_, mask_ = sampler(input_ids[i * sample_num:(i + sample_problem_sub_batch) * sample_num], problem_attn_mask[i * sample_num:(i + sample_problem_sub_batch) * sample_num], num=sample_num, topk=sample_topk, max_length=max_sample_length, temperature=sample_temperature)
+                    res_, hidden_cache_, text_end_indices_, mask_ = sampler(input_ids[i * sample_num:(i + sample_problem_sub_batch) * sample_num], problem_attn_mask[i * sample_num:(i + sample_problem_sub_batch) * sample_num], num=sample_num, topk=sample_topk, max_length=max_sample_length, temperature=sample_temperature, depth=looping_depth)
                     res = torch.cat([res, res_], dim=0)
                     hidden_cache = torch.cat([hidden_cache, hidden_cache_], dim=0)
                     text_end_indices = torch.cat([text_end_indices, text_end_indices_], dim=0)
                     mask = torch.cat([mask, mask_], dim=0)
                 else:
-                    res, hidden_cache, text_end_indices, mask = sampler(input_ids[:sample_problem_sub_batch * sample_num], problem_attn_mask[:sample_problem_sub_batch * sample_num], num=sample_num, topk=sample_topk, max_length=max_sample_length)
+                    res, hidden_cache, text_end_indices, mask = sampler(input_ids[:sample_problem_sub_batch * sample_num], problem_attn_mask[:sample_problem_sub_batch * sample_num], num=sample_num, topk=sample_topk, max_length=max_sample_length, depth=looping_depth)
                     init_res = True
                     
             cleanup()
@@ -353,7 +392,6 @@ while step <= total_steps:
             # normalization
             filt = None
             if (l := (corr_filt := correctness_rewards == corr_reward).sum()) < res.shape[0] / 2 and l != 0: # clip too many wrong answers, currently 1:1
-                print('correctness: ', l.cpu().item())
                 incorr_filt = torch.ones(sample_num * sample_problem_batch).to(device)
                 incorr_filt[correctness_rewards == 1] = 0
                 incorr_filt = torch.multinomial(incorr_filt, num_samples=l*1)
@@ -366,6 +404,10 @@ while step <= total_steps:
                 hidden_cache = hidden_cache[filt]
                 res = res[filt]
                 text_end_indices = text_end_indices[filt]
+
+            correctness = l.cpu().item()
+            print('correctness: ', correctness)
+            writer.add_scalar('correctness/train', correctness, step)
                 
             max_len_mask = len_rewards >= max_sample_length
             if max_len_mask.any():
@@ -404,14 +446,51 @@ while step <= total_steps:
                     embeds = model.lm_head.weight[seqs[i:end]][:, :-1].to('cuda:0')
                     hidden_cache_slice = hidden_cache[i:end]
                     with torch.amp.autocast(device_type=str(device), dtype=torch.float16):
-                        embeds = torch.cat([embeds[:, :input_ids.shape[1]], gater(vae.uncompress(F.dropout(hidden_cache_slice, p=hidden_dropout_rate, training=True)), embeds[:, input_ids.shape[1]:])], dim=1)
+                        last_hidden = vae.uncompress(F.dropout(hidden_cache_slice, p=hidden_dropout_rate, training=True))
+                        if looping_depth > 0: # deep looping
+                            hidden_pos = torch.arange(0, last_hidden.shape[1], dtype=torch.long, device=device)
+                            causal_mask = model._update_causal_mask(
+                                attention_mask=mask[input_ids.shape[1] - 1:-1], input_tensor=last_hidden, output_attentions=False
+                            ) # the mask here needs to be re-considered
+                            pos_embed = model.rotary_emb(last_hidden, hidden_pos)
+                            for depth_i in range(looping_depth):
+                                for layer_i in range(depth_start_layer_num, hidden_layer_num):
+                                    last_hidden = model.model.layers[layer_i](
+                                        last_hidden,
+                                        attention_mask=causal_mask,
+                                        position_ids=hidden_pos,
+                                        output_attentions=False,
+                                        use_cache=False,
+                                        cache_position=hidden_pos,
+                                        position_embeddings=pos_embed,
+                                    )[0]
+                        embeds = torch.cat([embeds[:, :input_ids.shape[1]], gater(last_hidden, embeds[:, input_ids.shape[1]:])], dim=1)
                         outputs = model(inputs_embeds=embeds, attention_mask=mask[i:end], output_hidden_states=True, return_dict=True)
                         loss = lossf(outputs.logits[:, input_ids.shape[1] - 1:].transpose(1, 2), seqs[i:end, input_ids.shape[1]:].masked_fill(mask[i:end, input_ids.shape[1]:] == 0, -100))
                         hidden = outputs.hidden_states[hidden_layer_num]
 
                         # compute loss
-                        new_processed_hidden = gater.forward_hidden(vae(hidden[:, input_ids.shape[1] - 1:-1]), embeds[:, input_ids.shape[1]:])
-                        processed_hidden = gater.forward_hidden(vae.uncompress(hidden_cache_slice), embeds[:, input_ids.shape[1]:])
+                        new_compressed_hidden = vae(hidden[:, input_ids.shape[1] - 1:-1], compressing=True)
+                        new_processed_hidden = vae.uncompress(new_compressed_hidden)
+                        if looping_depth > 0: # deep looping
+                            hidden_pos = torch.arange(0, new_processed_hidden.shape[1], dtype=torch.long, device=device)
+                            causal_mask = model._update_causal_mask(
+                                attention_mask=mask[input_ids.shape[1] - 1:-1], input_tensor=new_processed_hidden, output_attentions=False
+                            ) # the mask here needs to be re-considered
+                            pos_embed = model.rotary_emb(new_processed_hidden, hidden_pos)
+                            for depth_i in range(looping_depth):
+                                for layer_i in range(depth_start_layer_num, hidden_layer_num):
+                                    new_processed_hidden = model.model.layers[layer_i](
+                                        last_hidden,
+                                        attention_mask=causal_mask,
+                                        position_ids=hidden_pos,
+                                        output_attentions=False,
+                                        use_cache=False,
+                                        cache_position=hidden_pos,
+                                        position_embeddings=pos_embed,
+                                    )[0]
+                        new_processed_hidden = gater.forward_hidden(new_processed_hidden, embeds[:, input_ids.shape[1]:])
+                        processed_hidden = gater.forward_hidden(last_hidden, embeds[:, input_ids.shape[1]:])
                         hidden_loss = hidden_regularizer(new_processed_hidden, processed_hidden).mean(dim=-1) * mask[i:end, input_ids.shape[1]:-1]
                         # apply hidden regularization bonus
                         hidden_loss = hidden_loss * linear_interpl((text_end_indices + 1)[i:i + batch_size], hidden_reg_len_bonus_a, max_sample_length, 1, hidden_reg_len_bonus_high)
@@ -420,6 +499,11 @@ while step <= total_steps:
                         loss = ((loss.sum(dim=-1) * rewards[i:end]).sum() + hidden_loss.sum() * hidden_regularization_rate) / (text_end_indices[i:i + batch_size] + 1).sum()
                         loss += gate_bonus * gating_value_bonus * gating_value_decay ** (step // gating_bonus_update_step)
                         loss *= batch_size / res.shape[0]
+
+                        # randomly update hidden cache
+                        with torch.no_grad():
+                            update_index = torch.nonzero(torch.randn(hidden_cache.shape[1], device=device) < hidden_updating_rate)
+                            hidden_cache[i:end][:, update_index] = new_compressed_hidden[:, update_index]
                     
                     scaler.scale(loss).backward()
 
