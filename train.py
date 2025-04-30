@@ -498,7 +498,7 @@ while step <= total_steps:
                             causal_mask = model.model.model._update_causal_mask(
                                 attention_mask=mask[input_ids.shape[1] - 1:-1], cache_position=hidden_pos, input_tensor=new_processed_hidden, output_attentions=False, past_key_values=None
                             ) # the mask here needs to be re-considered
-                            pos_embed = model.model.model.rotary_emb(new_processed_hidden, hidden_pos.unsqueeze(0)
+                            pos_embed = model.model.model.rotary_emb(new_processed_hidden, hidden_pos.unsqueeze(0))
                             for depth_i in range(looping_depth):
                                 for layer_i in range(depth_start_layer_num, hidden_layer_num):
                                     new_processed_hidden = model.model.model.layers[layer_i](
