@@ -18,6 +18,26 @@ import threading
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu')
 
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.utils.data import Dataset, DataLoader
+from torch.utils.tensorboard import SummaryWriter
+from torch.optim import AdamW, Adam
+from torch.optim.lr_scheduler import CosineAnnealingLR
+
+from transformers import AutoTokenizer, AutoModelForCausalLM, DynamicCache, OffloadedCache
+import datasets
+from peft import get_peft_model, LoraConfig
+
+from tqdm import tqdm
+
+import gc
+import re
+import threading
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu')
+
 import pandas as pd
 import matplotlib.pyplot as plt
 
@@ -196,14 +216,15 @@ def sampler(input_ids, attn_mask, temperature=0.7, topk=16, max_length=2048, num
                 
                 # more depth -- model looping
                 if depth > 0:
-                    deep_cache_pos = cache_pos[input_ids.shape[1] - 1:].unsqueeze(0) - input_ids.shape[1] + 1
-                    causal_mask = model._update_causal_mask(
-                        attention_mask=attn_mask, input_tensor=uncompressed_hidden, cache_pos=deep_cache_pos, past_key_values=deep_kv_cache, output_attentions=False
+                    last_hidden = uncompressed_hidden
+                    deep_cache_pos = cache_pos[-1:] - input_ids.shape[1] + 1
+                    causal_mask = model.model.model._update_causal_mask(
+                        attention_mask=attn_mask[:, input_ids.shape[1] + i - 1].unsqueeze(1), input_tensor=last_hidden, cache_position=deep_cache_pos, past_key_values=deep_kv_cache[0], output_attentions=False
                     )
-                    pos_embed = model.rotary_emb(uncompressed_hidden, deep_cache_pos)
+                    pos_embed = model.model.model.rotary_emb(last_hidden, deep_cache_pos.unsqueeze(0))
                     for depth_i in range(depth):
                         for layer_i in range(depth_start_layer_num, hidden_layer_num):
-                            last_hidden = model.model.layers[layer_i](
+                            last_hidden = model.model.model.layers[layer_i](
                                 last_hidden,
                                 attention_mask=causal_mask,
                                 position_ids=deep_cache_pos,
@@ -338,7 +359,7 @@ gating_value_decay = 0.95
 gating_value_lambda = 5
 gating_bonus_update_step = 100
 
-looping_depth = 0 # not ready for depth > 0 yet
+looping_depth = 1 # not ready for depth > 0 yet
 
 data_train = DataLoader(dataset(data_train), batch_size=sample_problem_batch, shuffle=True)
 data_test = DataLoader(dataset(data_test), batch_size=sample_problem_batch)
@@ -449,13 +470,13 @@ while step <= total_steps:
                         last_hidden = vae.uncompress(F.dropout(hidden_cache_slice, p=hidden_dropout_rate, training=True))
                         if looping_depth > 0: # deep looping
                             hidden_pos = torch.arange(0, last_hidden.shape[1], dtype=torch.long, device=device)
-                            causal_mask = model._update_causal_mask(
-                                attention_mask=mask[input_ids.shape[1] - 1:-1], input_tensor=last_hidden, output_attentions=False
+                            causal_mask = model.model.model._update_causal_mask(
+                                attention_mask=mask[input_ids.shape[1] - 1:-1], input_tensor=last_hidden, cache_position=hidden_pos, output_attentions=False, past_key_values=None
                             ) # the mask here needs to be re-considered
-                            pos_embed = model.rotary_emb(last_hidden, hidden_pos)
+                            pos_embed = model.model.model.rotary_emb(last_hidden, hidden_pos.unsqueeze(0))
                             for depth_i in range(looping_depth):
                                 for layer_i in range(depth_start_layer_num, hidden_layer_num):
-                                    last_hidden = model.model.layers[layer_i](
+                                    last_hidden = model.model.model.layers[layer_i](
                                         last_hidden,
                                         attention_mask=causal_mask,
                                         position_ids=hidden_pos,
@@ -474,13 +495,13 @@ while step <= total_steps:
                         new_processed_hidden = vae.uncompress(new_compressed_hidden)
                         if looping_depth > 0: # deep looping
                             hidden_pos = torch.arange(0, new_processed_hidden.shape[1], dtype=torch.long, device=device)
-                            causal_mask = model._update_causal_mask(
-                                attention_mask=mask[input_ids.shape[1] - 1:-1], input_tensor=new_processed_hidden, output_attentions=False
+                            causal_mask = model.model.model._update_causal_mask(
+                                attention_mask=mask[input_ids.shape[1] - 1:-1], cache_position=hidden_pos, input_tensor=new_processed_hidden, output_attentions=False, past_key_values=None
                             ) # the mask here needs to be re-considered
-                            pos_embed = model.rotary_emb(new_processed_hidden, hidden_pos)
+                            pos_embed = model.model.model.rotary_emb(new_processed_hidden, hidden_pos.unsqueeze(0)
                             for depth_i in range(looping_depth):
                                 for layer_i in range(depth_start_layer_num, hidden_layer_num):
-                                    new_processed_hidden = model.model.layers[layer_i](
+                                    new_processed_hidden = model.model.model.layers[layer_i](
                                         last_hidden,
                                         attention_mask=causal_mask,
                                         position_ids=hidden_pos,
