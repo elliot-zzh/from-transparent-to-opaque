@@ -48,7 +48,7 @@ torch.manual_seed(42)
 writer = SummaryWriter('runs/demo')
 
 # load the model
-model_name = 'Qwen/Qwen2.5-1.5B-Instruct'
+model_name = 'Qwen/Qwen3-1.7B'
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 model = AutoModelForCausalLM.from_pretrained(model_name, device_map='auto', torch_dtype=torch.float16, attn_implementation='sdpa')
 torch.backends.cuda.enable_flash_sdp(True)
@@ -142,12 +142,12 @@ model = get_peft_model(model, peft_config)
 model.print_trainable_parameters()
 
 # Gater
-gater = Gate(1536, 0.01)
+gater = Gate(2048, 0.01)
 
 # load VAE
-vae = VAE(1536, 256, 1536 * 4)
+vae = VAE(2048, 256, 2048 * 4)
 vae = torch.jit.script(vae)
-vae.load_state_dict(torch.load('/home/featurize/data/vae_epoch14.pth'))
+vae.load_state_dict(torch.load('/home/featurize/data/vae_epoch15.pth'))
 
 vae = vae.to(device)
 gater = gater.to(device)
@@ -156,7 +156,7 @@ gater = gater.to(device)
 # eot = tokenizer('<｜end▁of▁sentence｜>').input_ids[1:][0]
 im_end, eot = tokenizer('<|im_end|><|endoftext|>').input_ids
 
-hidden_layer_num = 18
+hidden_layer_num = 20
 depth_start_layer_num = 12
 
 def cleanup():
@@ -340,8 +340,8 @@ l_cache_length = 400
 sample_num = 16
 sample_topk = 12
 sample_temperature = 0.6
-sample_problem_batch = 10
-sample_problem_sub_batch = 10
+sample_problem_batch = 5
+sample_problem_sub_batch = 5
 acc_check_only = False
 train_gc_interval = 15
 corr_reward = 2
