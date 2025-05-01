@@ -14,27 +14,6 @@ from tqdm import tqdm
 
 import gc
 import re
-import threading
-
-device = torch.device('cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu')
-
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader
-from torch.utils.tensorboard import SummaryWriter
-from torch.optim import AdamW, Adam
-from torch.optim.lr_scheduler import CosineAnnealingLR
-
-from transformers import AutoTokenizer, AutoModelForCausalLM, DynamicCache, OffloadedCache
-import datasets
-from peft import get_peft_model, LoraConfig
-
-from tqdm import tqdm
-
-import gc
-import re
-import threading
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu')
 
