@@ -1,0 +1,8 @@
+torch==2.7.0
+datasets==3.5.1
+pandas==2.2.3
+transformers==4.51.3
+peft==0.15.2
+tqdm==4.67.1
+matplotlib==3.10.1
+polars==1.29.0
