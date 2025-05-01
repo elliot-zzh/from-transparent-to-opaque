@@ -441,8 +441,7 @@ while step <= total_steps:
         for epoch in range(num_epochs):
             print('training epoch: ', epoch + 1)
             cleanup()
-            new_hidden_cache = torch.zeros_like(hidden_cache)
-            for i in range(0, res.shape[0], batch_size):
+            for i in tqdm(range(0, res.shape[0], batch_size), desc=f'training epoch: {epoch + 1}'):
                 try:
                     if step % train_gc_interval == 0: cleanup()
                     end = (i + batch_size) if i + batch_size <= res.shape[0] else res.shape[0]
