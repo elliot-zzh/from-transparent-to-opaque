@@ -339,22 +339,22 @@ max_sample_length = 512
 l_cache_length = 400
 sample_num = 16
 sample_topk = 12
-sample_temperature = 0.7
-sample_problem_batch = 20
+sample_temperature = 0.6
+sample_problem_batch = 10
 sample_problem_sub_batch = 10
 acc_check_only = False
 train_gc_interval = 15
 corr_reward = 2
 
 # hidden regularization
-hidden_regularization_rate = 1
+hidden_regularization_rate = 0.5
 hidden_dropout_rate = 0.05
-hidden_reg_len_bonus_a = 64
-hidden_reg_len_bonus_high = 32
-hidden_updating_rate = 0.02
+hidden_reg_len_bonus_a = 20
+hidden_reg_len_bonus_high = 10
+hidden_updating_rate = 0.05
 
 # gating value bonus
-gating_value_bonus = 0.4
+gating_value_bonus = 0.2
 gating_value_decay = 0.95
 gating_value_lambda = 5
 gating_bonus_update_step = 100
@@ -392,6 +392,7 @@ while step <= total_steps:
         with torch.no_grad():
             init_res = False
             # multi turn sampling
+            ans = sum([[i] * sample_num for i in ans], [])
             input_ids, problem_attn_mask = tokenize(sum([[prompt + i + prompt_suffix] * sample_num for i in problem], []), direct=True)
             for i in range(0, sample_problem_batch, sample_problem_sub_batch):
                 if init_res:
@@ -403,6 +404,8 @@ while step <= total_steps:
                 else:
                     res, hidden_cache, text_end_indices, mask = sampler(input_ids[:sample_problem_sub_batch * sample_num], problem_attn_mask[:sample_problem_sub_batch * sample_num], num=sample_num, topk=sample_topk, max_length=max_sample_length, depth=looping_depth)
                     init_res = True
+
+                cleanup()
                     
             cleanup()
             hidden_cache = hidden_cache[:, :-1]
@@ -412,10 +415,10 @@ while step <= total_steps:
 
             # normalization
             filt = None
-            if (l := (corr_filt := correctness_rewards == corr_reward).sum()) < res.shape[0] / 2 and l != 0: # clip too many wrong answers, currently 1:1
+            if (l := (corr_filt := correctness_rewards == corr_reward).sum()) < res.shape[0] / 3 and l != 0: # clip too many wrong answers, currently 1:1
                 incorr_filt = torch.ones(sample_num * sample_problem_batch).to(device)
                 incorr_filt[correctness_rewards == 1] = 0
-                incorr_filt = torch.multinomial(incorr_filt, num_samples=l*1)
+                incorr_filt = torch.multinomial(incorr_filt, num_samples=l*2)
                 filt = torch.cat([torch.nonzero(corr_filt, as_tuple=True)[0], incorr_filt], dim=0)
                 filt = filt[torch.randperm(filt.size(0))]
                 correctness_rewards = correctness_rewards[filt]
@@ -471,7 +474,7 @@ while step <= total_steps:
                         if looping_depth > 0: # deep looping
                             hidden_pos = torch.arange(0, last_hidden.shape[1], dtype=torch.long, device=device)
                             causal_mask = model.model.model._update_causal_mask(
-                                attention_mask=mask[input_ids.shape[1] - 1:-1], input_tensor=last_hidden, cache_position=hidden_pos, output_attentions=False, past_key_values=None
+                                attention_mask=mask[i:end, input_ids.shape[1] - 1:-1], input_tensor=last_hidden, cache_position=hidden_pos, output_attentions=False, past_key_values=None
                             ) # the mask here needs to be re-considered
                             pos_embed = model.model.model.rotary_emb(last_hidden, hidden_pos.unsqueeze(0))
                             for depth_i in range(looping_depth):
@@ -496,7 +499,7 @@ while step <= total_steps:
                         if looping_depth > 0: # deep looping
                             hidden_pos = torch.arange(0, new_processed_hidden.shape[1], dtype=torch.long, device=device)
                             causal_mask = model.model.model._update_causal_mask(
-                                attention_mask=mask[input_ids.shape[1] - 1:-1], cache_position=hidden_pos, input_tensor=new_processed_hidden, output_attentions=False, past_key_values=None
+                                attention_mask=mask[i:end, input_ids.shape[1] - 1:-1], cache_position=hidden_pos, input_tensor=new_processed_hidden, output_attentions=False, past_key_values=None
                             ) # the mask here needs to be re-considered
                             pos_embed = model.model.model.rotary_emb(new_processed_hidden, hidden_pos.unsqueeze(0))
                             for depth_i in range(looping_depth):
