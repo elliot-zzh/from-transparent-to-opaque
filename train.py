@@ -7,20 +7,17 @@ from torch.optim import AdamW, Adam
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from transformers import AutoTokenizer, AutoModelForCausalLM, DynamicCache, OffloadedCache
-import datasets
 from peft import get_peft_model, LoraConfig
+from math_verify import parse, verify
 
 from tqdm import tqdm
+import pandas as pd
+import matplotlib.pyplot as plt
 
 import gc
 import re
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu')
-
-import pandas as pd
-import matplotlib.pyplot as plt
-
-from math_verify import parse, verify
 
 torch.manual_seed(42)
 
@@ -153,10 +150,10 @@ def tokenize(text, direct=False, max_length=1024, pad=False, device=device):
     return input_ids, attn_mask
 
 
-# A lot of hacking here. For details please refer to
+# A lot of hacking here. For details refer to
 # https://github.com/huggingface/transformers/blob/main/src/transformers/models/llama/
-# and
 # https://github.com/huggingface/transformers/blob/main/src/transformers/models/qwen2/
+# https://github.com/huggingface/transformers/blob/main/src/transformers/models/qwen3/
 def sampler(input_ids, attn_mask, temperature=0.7, topk=16, max_length=2048, num=16, min_p=0.02, gc_interval=64, hidden_dropout_rate=0.02, depth=0):
     model.eval()
     vae.eval()
@@ -274,7 +271,6 @@ prompt_suffix = '\n<|im_end|><|im_start|>\n'
 # data = load_dataset('open-r1/OpenR1-Math-220k', split='train')
 data_train = pd.read_json('/home/featurize/data/train.jsonl', lines=True)
 data_test = pd.read_json('/home/featurize/data/test.jsonl', lines=True)
-from torch.utils.data import Dataset
 
 class dataset(Dataset):
     def __init__(self, df):
