@@ -98,6 +98,8 @@ def train():
 
     while step <= total_steps:
         for input_ids, problem_attn_mask, ans in data_train:
+            print(input_ids)
+            problem_attn_mask = problem_attn_mask.to(device)
             cleanup()
             with torch.no_grad():
                 init_res = False
