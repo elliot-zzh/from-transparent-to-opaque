@@ -1,10 +1,10 @@
 import torch
+from accelerate import Accelerator
+from parameters import gradient_accumulation_steps
 
 model_name = "Qwen/Qwen3-1.7B"
-device = torch.device(
-    "cuda"
-    if torch.cuda.is_available()
-    else "mps"
-    if torch.backends.mps.is_available()
-    else "cpu"
+
+accelerator = Accelerator(
+    mixed_precision="bf16", gradient_accumulation_steps=gradient_accumulation_steps
 )
+device = accelerator.device
