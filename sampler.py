@@ -12,7 +12,7 @@ from tqdm import tqdm
 
 from parameters import hidden_layer_num, depth_start_layer_num, hidden_dropout_rate
 from model import im_end, eot
-from train import model_forward
+from forward import model_forward
 from utils import cleanup
 
 
