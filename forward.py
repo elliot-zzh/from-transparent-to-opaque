@@ -1,6 +1,5 @@
 from model import model
 
-
 def model_forward(
     hidden_state,
     attn_mask,
@@ -14,7 +13,7 @@ def model_forward(
         attention_mask=attn_mask,
         input_tensor=hidden_state,
         cache_position=pos,
-        past_key_value=kv_cache,
+        past_key_values=kv_cache,
         output_attentions=False,
     )
     pos_embed = model.model.model.rotary_emb(hidden_state, pos[None, :])
