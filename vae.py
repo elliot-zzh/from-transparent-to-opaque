@@ -1,8 +1,4 @@
-import torch
 import torch.nn as nn
-from torch.optim import Adam
-
-from vae.parameters import device
 
 
 class VAE(nn.Module):
@@ -31,17 +27,9 @@ class VAE(nn.Module):
         x = self.norm2(x)
         return self.w_back(self.silu(self.wuc(x)) * self.wuv(x)) + self.res_proj2(x)
 
-    def forward(self, x, compressing=False):
+    def forward(self, x, compressing: bool = False):
         x = self.norm1(x)
         x = self.wc2(self.silu(self.wc1(x)) * self.wcv(x)) + self.res_proj1(x)
-        if compressing: return x
+        if compressing:
+            return x
         return self.uncompress(x)
-
-vae = VAE(2048, 256, 2048 * 4)
-
-optimizer = Adam(vae.parameters(), lr=1e-3)
-
-vae = vae.to(device)
-vae.train()
-scaler = torch.amp.GradScaler(device=device)
-lossf = nn.MSELoss()
