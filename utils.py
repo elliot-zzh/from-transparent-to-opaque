@@ -1,7 +1,7 @@
 import gc
 import torch
 from config import device
-from model import tokenizer
+from tokenizer import tokenizer
 
 
 def cleanup():
