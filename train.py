@@ -93,12 +93,12 @@ def norm(x: torch.Tensor) -> torch.Tensor:
 linear_interpl = torch.jit.script(linear_interpl)
 norm = torch.jit.script(norm)
 
+
 def train():
     step = 0
 
     while step <= total_steps:
         for input_ids, problem_attn_mask, ans in data_train:
-            print(input_ids)
             problem_attn_mask = problem_attn_mask.to(device)
             cleanup()
             with torch.no_grad():
@@ -107,10 +107,12 @@ def train():
                     if init_res:
                         res_, hidden_cache_, text_end_indices_, mask_ = sampler(
                             input_ids[
-                            i * sample_num: (i + sample_problem_sub_batch) * sample_num
+                                i * sample_num : (i + sample_problem_sub_batch)
+                                * sample_num
                             ],
                             problem_attn_mask[
-                            i * sample_num: (i + sample_problem_sub_batch) * sample_num
+                                i * sample_num : (i + sample_problem_sub_batch)
+                                * sample_num
                             ],
                             num=sample_num,
                             topk=sample_topk,
@@ -151,11 +153,13 @@ def train():
 
                 filt = None
                 if (
-                        l := (corr_filt := correctness_rewards == corr_reward).sum()
+                    l := (corr_filt := correctness_rewards == corr_reward).sum()
                 ) < res.shape[
                     0
                 ] / 3 and l != 0:  # clip too many wrong answers, currently 1:1
-                    incorr_filt = torch.ones(sample_num * sample_problem_batch).to(device)
+                    incorr_filt = torch.ones(sample_num * sample_problem_batch).to(
+                        device
+                    )
                     incorr_filt[correctness_rewards == 1] = 0
                     incorr_filt = torch.multinomial(incorr_filt, num_samples=l * 2)
                     filt = torch.cat(
@@ -189,8 +193,8 @@ def train():
                 )
                 if len_interval_mask.any():
                     len_rewards[len_interval_mask] = (
-                                                             l_cache_length - len_rewards[len_interval_mask]
-                                                     ) / (max_sample_length - l_cache_length)
+                        l_cache_length - len_rewards[len_interval_mask]
+                    ) / (max_sample_length - l_cache_length)
                 rewards = correctness_rewards + len_rewards
                 rewards = norm(rewards)
 
@@ -213,7 +217,8 @@ def train():
                 print("training epoch: ", epoch + 1)
                 cleanup()
                 for i in tqdm(
-                        range(0, res.shape[0], batch_size), desc=f"training epoch: {epoch + 1}"
+                    range(0, res.shape[0], batch_size),
+                    desc=f"training epoch: {epoch + 1}",
                 ):
                     with accelerator.accumulate(model, vae, gater):
                         if step % train_gc_interval == 0:
@@ -228,22 +233,27 @@ def train():
                         with accelerator.autocast():
                             last_hidden = vae.uncompress(
                                 F.dropout(
-                                    hidden_cache_slice, p=hidden_dropout_rate, training=True
+                                    hidden_cache_slice,
+                                    p=hidden_dropout_rate,
+                                    training=True,
                                 )
                             )
                             if looping_depth > 0:  # deep looping
                                 hidden_pos = torch.arange(
-                                    0, last_hidden.shape[1], dtype=torch.long, device=device
+                                    0,
+                                    last_hidden.shape[1],
+                                    dtype=torch.long,
+                                    device=device,
                                 )
                                 for depth_i in range(looping_depth):
                                     for layer_i in range(
-                                            depth_start_layer_num, hidden_layer_num
+                                        depth_start_layer_num, hidden_layer_num
                                     ):
                                         last_hidden = model_forward(
                                             hidden_state=last_hidden,
                                             attn_mask=mask[
-                                                      i:end, input_ids.shape[1] - 1: -1
-                                                      ],
+                                                i:end, input_ids.shape[1] - 1 : -1
+                                            ],
                                             pos=hidden_pos,
                                             start_layer=depth_start_layer_num,
                                             end_layer=hidden_layer_num,
@@ -252,7 +262,7 @@ def train():
                             embeds = torch.cat(
                                 [
                                     embeds[:, : input_ids.shape[1]],
-                                    gater(last_hidden, embeds[:, input_ids.shape[1]:]),
+                                    gater(last_hidden, embeds[:, input_ids.shape[1] :]),
                                 ],
                                 dim=1,
                             )
@@ -268,47 +278,47 @@ def train():
                                 model.model.model.norm(final_hidden)
                             ).float()
                             loss = lossf(
-                                logits[:, input_ids.shape[1] - 1:].transpose(1, 2),
-                                seqs[i:end, input_ids.shape[1]:].masked_fill(
-                                    mask[i:end, input_ids.shape[1]:] == 0, -100
+                                logits[:, input_ids.shape[1] - 1 :].transpose(1, 2),
+                                seqs[i:end, input_ids.shape[1] :].masked_fill(
+                                    mask[i:end, input_ids.shape[1] :] == 0, -100
                                 ),
                             )
 
                             # compute loss
                             new_compressed_hidden = vae(
-                                hidden[:, input_ids.shape[1] - 1: -1], compressing=True
+                                hidden[:, input_ids.shape[1] - 1 : -1], compressing=True
                             )
                             new_processed_hidden = vae.uncompress(new_compressed_hidden)
                             if looping_depth > 0:  # deep looping
                                 for depth_i in range(looping_depth):
                                     for layer_i in range(
-                                            depth_start_layer_num, hidden_layer_num
+                                        depth_start_layer_num, hidden_layer_num
                                     ):
                                         last_hidden = model_forward(
                                             hidden_state=new_processed_hidden,
                                             attn_mask=mask[
-                                                      i:end, input_ids.shape[1] - 1: -1
-                                                      ],
+                                                i:end, input_ids.shape[1] - 1 : -1
+                                            ],
                                             pos=hidden_pos,
                                             start_layer=depth_start_layer_num,
                                             end_layer=hidden_layer_num,
                                         )
 
                             new_processed_hidden = gater.forward_hidden(
-                                new_processed_hidden, embeds[:, input_ids.shape[1]:]
+                                new_processed_hidden, embeds[:, input_ids.shape[1] :]
                             )
                             processed_hidden = gater.forward_hidden(
-                                last_hidden, embeds[:, input_ids.shape[1]:]
+                                last_hidden, embeds[:, input_ids.shape[1] :]
                             )
                             hidden_loss = (
-                                    hidden_regularizer(
-                                        new_processed_hidden, processed_hidden
-                                    ).mean(dim=-1)
-                                    * mask[i:end, input_ids.shape[1]: -1]
+                                hidden_regularizer(
+                                    new_processed_hidden, processed_hidden
+                                ).mean(dim=-1)
+                                * mask[i:end, input_ids.shape[1] : -1]
                             )
                             # apply hidden regularization bonus
                             hidden_loss = hidden_loss * linear_interpl(
-                                (text_end_indices + 1)[i: i + batch_size],
+                                (text_end_indices + 1)[i : i + batch_size],
                                 hidden_reg_len_bonus_a,
                                 max_sample_length,
                                 1,
@@ -319,13 +329,14 @@ def train():
                                 gating_value_lambda * (0.5 - gater.gate) ** 2
                             ).mean()
                             loss = (
-                                           (loss.sum(dim=-1) * rewards[i:end]).sum()
-                                           + hidden_loss.sum() * hidden_regularization_rate
-                                   ) / (text_end_indices[i: i + batch_size] + 1).sum()
+                                (loss.sum(dim=-1) * rewards[i:end]).sum()
+                                + hidden_loss.sum() * hidden_regularization_rate
+                            ) / (text_end_indices[i : i + batch_size] + 1).sum()
                             loss += (
-                                    gate_bonus
-                                    * gating_value_bonus
-                                    * gating_value_decay ** (step // gating_bonus_update_step)
+                                gate_bonus
+                                * gating_value_bonus
+                                * gating_value_decay
+                                ** (step // gating_bonus_update_step)
                             )
                             # loss *= batch_size / res.shape[0]
                             loss *= batch_size
@@ -358,6 +369,7 @@ def train():
 
     writer.close()
     print("all done")
+
 
 if __name__ == "__main__":
     train()

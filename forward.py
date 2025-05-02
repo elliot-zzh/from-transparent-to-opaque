@@ -1,5 +1,6 @@
 from model import model
 
+
 def model_forward(
     hidden_state,
     attn_mask,

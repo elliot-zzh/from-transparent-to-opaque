@@ -38,7 +38,7 @@ def sampler(
 
     # prefill the problem
     with accelerator.autocast():
-        embeds = model.lm_head.weight[input_ids]
+        embeds = model.model.model.embed_tokens(input_ids)
         final_hidden, last_hidden = model_forward(
             hidden_state=embeds,
             attn_mask=attn_mask,
@@ -48,7 +48,7 @@ def sampler(
         )
         logits = model.lm_head(model.model.model.norm(final_hidden[:, -1, :])).float()
 
-    hidden_cache = torch.zeros(problem_batch_size, 0, 256).to(device)
+    hidden_cache = torch.Tensor(problem_batch_size, 0, 256).to(device)
 
     # text_end_appeared = False # if the first <｜end▁of▁sentence｜>
     gen_all_done = False
@@ -123,7 +123,9 @@ def sampler(
         # forward
         with accelerator.autocast():
             cache_pos = cache_pos[-1:] + 1
-            embeds = model.lm_head.weight[selected_index.view(problem_batch_size, 1)]
+            embeds = model.model.model.embed_tokens(
+                selected_index.view(problem_batch_size, 1)
+            )
             embeds = gater(uncompressed_hidden, embeds)
             final_hidden, last_hidden = model_forward(
                 hidden_state=embeds,
