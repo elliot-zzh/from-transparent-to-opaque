@@ -10,6 +10,7 @@ from peft import get_peft_model, LoraConfig
 from accelerate import Accelerator
 from gates import Gate
 from parameters import gradient_accumulation_steps
+from tokenizer import tokenizer
 from vae import VAE
 
 accelerator = Accelerator(
