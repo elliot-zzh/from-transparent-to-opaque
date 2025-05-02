@@ -2,7 +2,7 @@ import re
 from torch.utils.data import DataLoader, Dataset
 import pandas as pd
 from math_verify import parse, verify
-from model import prompt, prompt_suffix
+from tokenizer import prompt, prompt_suffix
 from parameters import sample_problem_batch, sample_num
 from utils import tokenize
 
