@@ -3,7 +3,7 @@ import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
 from torch.optim import AdamW, Adam
 from torch.optim.lr_scheduler import CosineAnnealingLR
-from config import model_name
+from config import model_name, accelerator
 from data import data_train
 from transformers import AutoTokenizer, AutoModelForCausalLM, DynamicCache
 from peft import get_peft_model, LoraConfig
@@ -13,10 +13,6 @@ from parameters import gradient_accumulation_steps
 from tokenizer import tokenizer
 from vae import VAE
 
-accelerator = Accelerator(
-    mixed_precision="bf16", gradient_accumulation_steps=gradient_accumulation_steps
-)
-device = accelerator.device
 
 torch.manual_seed(42)
 
