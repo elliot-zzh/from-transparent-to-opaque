@@ -1,7 +1,7 @@
 import gc
 import torch
 from config import device
-from tokenizer import tokenizer
+from model import tokenizer
 
 
 def cleanup():
@@ -9,7 +9,7 @@ def cleanup():
     if device == "cuda":
         torch.cuda.empty_cache()
     elif device == "mps":
-        torch.mps.empty_cache()
+        torch.cuda.empty_cache()
 
 
 def tokenize(text, direct=False, max_length=1024, pad=False, trn=True, device=device):

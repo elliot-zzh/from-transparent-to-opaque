@@ -3,22 +3,27 @@ import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
 from torch.optim import AdamW, Adam
 from torch.optim.lr_scheduler import CosineAnnealingLR
-from config import model_name, accelerator
 from data import data_train
 from transformers import AutoTokenizer, AutoModelForCausalLM, DynamicCache
 from peft import get_peft_model, LoraConfig
 from accelerate import Accelerator
 from gates import Gate
 from parameters import gradient_accumulation_steps
-from tokenizer import tokenizer
 from vae import VAE
 
+accelerator = Accelerator(
+    mixed_precision="bf16", gradient_accumulation_steps=gradient_accumulation_steps
+)
+device = accelerator.device
 
 torch.manual_seed(42)
 
 writer = SummaryWriter("runs/demo")
 
 # load the model
+model_name = "Qwen/Qwen3-1.7B"
+tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
+tokenizer.padding_side = "left"
 model = AutoModelForCausalLM.from_pretrained(
     model_name,
     device_map="auto",
@@ -65,3 +70,6 @@ hidden_regularizer = nn.MSELoss(reduction="none")
 # end_of_text mark
 # eot = tokenizer('<｜end▁of▁sentence｜>').input_ids[1:][0]
 im_end, eot = tokenizer("<|im_end|><|endoftext|>").input_ids
+
+prompt = "<|im_start|>Human: You are a math solving assistant. Now you should solve the math problem below, step by step in detail, and eventually, **repeat your final answer in the LaTeX `\\boxed{}:`**\n"  # basic system prompt
+prompt_suffix = "\n<|im_end|><|im_start|>\n"
