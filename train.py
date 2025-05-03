@@ -149,10 +149,16 @@ def train():
                 # --- end of decentralized sampling ---
                 # --- centralized validating ---
 
+                if res.shape[1] > max_train_length:
+                    seqs = torch.cat([input_ids, res[:, :max_train_length]], dim=1)
+                else:
+                    seqs = torch.cat([input_ids, res], dim=1)
+
                 res = accelerator.gather(res)
                 hidden_cache = accelerator.gather(hidden_cache)
                 text_end_indices = accelerator.gather(text_end_indices)
                 mask = accelerator.gather(mask)
+                seqs = accelerator.gather(seqs)
 
                 if accelerator.is_main_process:
                     hidden_cache = hidden_cache[:, :-1]
@@ -177,7 +183,9 @@ def train():
                             device
                         )
                         incorr_filt[correctness_rewards == 1] = 0
-                        incorr_filt = torch.multinomial(incorr_filt, num_samples=l * 2)
+                        incorr_filt = torch.multinomial(
+                            incorr_filt, num_samples=(l * 2).item()
+                        )
                         filt = torch.cat(
                             [torch.nonzero(corr_filt, as_tuple=True)[0], incorr_filt],
                             dim=0,
@@ -223,10 +231,7 @@ def train():
 
                 with torch.no_grad():
                     if res.shape[1] > max_train_length:
-                        seqs = torch.cat([input_ids, res[:, :max_train_length]], dim=1)
                         hidden_cache = hidden_cache[:, : max_train_length - 1]
-                    else:
-                        seqs = torch.cat([input_ids, res], dim=1)
 
             # --- end of centralized validating ---
 
