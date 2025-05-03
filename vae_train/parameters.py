@@ -3,11 +3,11 @@ from accelerate import Accelerator
 
 # Use accelerator for distributed training
 accelerator = Accelerator(
-    mixed_precision="bf16", 
+    mixed_precision="bf16",
     gradient_accumulation_steps=6,
     device_placement=True,
     log_with="tensorboard",
-    project_dir="./runs/vae_distributed"
+    project_dir="./runs/vae_distributed",
 )
 device = accelerator.device
 

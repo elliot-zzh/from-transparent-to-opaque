@@ -1,7 +1,6 @@
 import torch
-from tqdm import tqdm
 import torch.nn.functional as F
-from config import device
+from config import device, ensure_tensor_type, tensor_concat
 from data import data_train, verifier
 from model import (
     model,
@@ -101,13 +100,16 @@ def train():
         # Set epoch for distributed sampler
         if hasattr(data_train, "sampler") and hasattr(data_train.sampler, "set_epoch"):
             data_train.sampler.set_epoch(step // len(data_train))
-            
+
         for input_ids, problem_attn_mask, ans in data_train:
             input_ids = input_ids.to(device)
             problem_attn_mask = problem_attn_mask.to(device)
             cleanup()
             with torch.no_grad():
                 init_res = False
+
+                # --- decentralized sampling ---
+
                 for i in range(0, sample_problem_batch, sample_problem_sub_batch):
                     if init_res:
                         res_, hidden_cache_, text_end_indices_, mask_ = sampler(
@@ -125,32 +127,12 @@ def train():
                             temperature=sample_temperature,
                             depth=looping_depth,
                         )
-                        # Safely concatenate tensors, ensuring compatible tensor types
-                        if hasattr(res, "_local_tensor") and not hasattr(res_, "_local_tensor"):
-                            res_ = accelerator.prepare(res_)
-                        elif hasattr(res_, "_local_tensor") and not hasattr(res, "_local_tensor"):
-                            res = accelerator.prepare(res)
-                        res = torch.cat([res, res_], dim=0)
-                        
-                        if hasattr(hidden_cache, "_local_tensor") and not hasattr(hidden_cache_, "_local_tensor"):
-                            hidden_cache_ = accelerator.prepare(hidden_cache_)
-                        elif hasattr(hidden_cache_, "_local_tensor") and not hasattr(hidden_cache, "_local_tensor"):
-                            hidden_cache = accelerator.prepare(hidden_cache)
-                        hidden_cache = torch.cat([hidden_cache, hidden_cache_], dim=0)
-                        
-                        if hasattr(text_end_indices, "_local_tensor") and not hasattr(text_end_indices_, "_local_tensor"):
-                            text_end_indices_ = accelerator.prepare(text_end_indices_)
-                        elif hasattr(text_end_indices_, "_local_tensor") and not hasattr(text_end_indices, "_local_tensor"):
-                            text_end_indices = accelerator.prepare(text_end_indices)
-                        text_end_indices = torch.cat(
-                            [text_end_indices, text_end_indices_], dim=0
+                        res = tensor_concat(res, res_)
+                        hidden_cache = tensor_concat(hidden_cache, hidden_cache_)
+                        text_end_indices = tensor_concat(
+                            text_end_indices, text_end_indices_
                         )
-                        
-                        if hasattr(mask, "_local_tensor") and not hasattr(mask_, "_local_tensor"):
-                            mask_ = accelerator.prepare(mask_)
-                        elif hasattr(mask_, "_local_tensor") and not hasattr(mask, "_local_tensor"):
-                            mask = accelerator.prepare(mask)
-                        mask = torch.cat([mask, mask_], dim=0)
+                        mask = tensor_concat(mask, mask_)
                     else:
                         res, hidden_cache, text_end_indices, mask = sampler(
                             input_ids[: sample_problem_sub_batch * sample_num],
@@ -164,87 +146,99 @@ def train():
 
                     cleanup()
 
-                hidden_cache = hidden_cache[:, :-1]
+                # --- end of decentralized sampling ---
+                # --- centralized validating ---
 
-                correctness_rewards = torch.Tensor(
-                    verifier(
-                        tokenizer.batch_decode(res, skip_special_tokens=True),
-                        ans,
-                        corr_score=corr_reward,
-                    )
-                ).to(device)
-                print(tokenizer.decode(res[0]))
-                len_rewards = text_end_indices.float() + 1
+                res = accelerator.gather(res)
+                hidden_cache = accelerator.gather(hidden_cache)
+                text_end_indices = accelerator.gather(text_end_indices)
+                mask = accelerator.gather(mask)
 
-                filt = None
-                if (
-                    l := (corr_filt := correctness_rewards == corr_reward).sum()
-                ) < res.shape[
-                    0
-                ] / 3 and l != 0:  # clip too many wrong answers, currently 1:1
-                    incorr_filt = torch.ones(sample_num * sample_problem_batch).to(
-                        device
-                    )
-                    incorr_filt[correctness_rewards == 1] = 0
-                    incorr_filt = torch.multinomial(incorr_filt, num_samples=l * 2)
-                    filt = torch.cat(
-                        [torch.nonzero(corr_filt, as_tuple=True)[0], incorr_filt], dim=0
-                    )
-                    filt = filt[torch.randperm(filt.size(0))]
-                    correctness_rewards = correctness_rewards[filt]
-                    len_rewards = len_rewards[filt]
-                    mask = mask[filt]
-                    input_ids = input_ids[filt]
-                    hidden_cache = hidden_cache[filt]
-                    res = res[filt]
-                    text_end_indices = text_end_indices[filt]
+                if accelerator.is_main_process:
+                    hidden_cache = hidden_cache[:, :-1]
 
-                correctness = l.cpu().item()
-                if correctness == 0:
-                    print("NG. Re")
+                    correctness_rewards = torch.Tensor(
+                        verifier(
+                            tokenizer.batch_decode(res, skip_special_tokens=True),
+                            ans,
+                            corr_score=corr_reward,
+                        )
+                    ).to(device)
+                    accelerator.print(tokenizer.decode(res[0]))
+                    len_rewards = text_end_indices.float() + 1
+
+                    filt = None
+                    if (
+                        l := (corr_filt := correctness_rewards == corr_reward).sum()
+                    ) < res.shape[
+                        0
+                    ] / 3 and l != 0:  # clip too many wrong answers, currently 1:1
+                        incorr_filt = torch.ones(sample_num * sample_problem_batch).to(
+                            device
+                        )
+                        incorr_filt[correctness_rewards == 1] = 0
+                        incorr_filt = torch.multinomial(incorr_filt, num_samples=l * 2)
+                        filt = torch.cat(
+                            [torch.nonzero(corr_filt, as_tuple=True)[0], incorr_filt],
+                            dim=0,
+                        )
+                        filt = filt[torch.randperm(filt.size(0))]
+
+                        torch.distributed.broadcast(filt, 0)
+
+                        correctness_rewards = correctness_rewards[filt]
+                        len_rewards = len_rewards[filt]
+                        mask = mask[filt]
+                        input_ids = input_ids[filt]
+                        hidden_cache = hidden_cache[filt]
+                        res = res[filt]
+                        text_end_indices = text_end_indices[filt]
+
+                    correctness = l.cpu().item()
+                    if correctness == 0:
+                        accelerator.print("NG. Re")
+                        continue
+                    accelerator.print("correctness: ", correctness)
+                    writer.add_scalar("correctness/train", correctness, step)
+
+                    # reward normalization to get advantage
+                    max_len_mask = len_rewards >= max_sample_length
+                    if max_len_mask.any():
+                        len_rewards[len_rewards >= max_sample_length] = -1
+                    cache_len_mask = len_rewards <= l_cache_length
+                    if cache_len_mask.any():
+                        len_rewards[len_rewards <= l_cache_length] = 0
+                    len_interval_mask = torch.logical_not(
+                        torch.logical_or(max_len_mask, cache_len_mask)
+                    )
+                    if len_interval_mask.any():
+                        len_rewards[len_interval_mask] = (
+                            l_cache_length - len_rewards[len_interval_mask]
+                        ) / (max_sample_length - l_cache_length)
+                    rewards = correctness_rewards + len_rewards
+                    rewards = norm(rewards)
+
+                if acc_check_only:
                     continue
-                print("correctness: ", correctness)
-                writer.add_scalar("correctness/train", correctness, step)
 
-                # reward normalization to get advantage
-                max_len_mask = len_rewards >= max_sample_length
-                if max_len_mask.any():
-                    len_rewards[len_rewards >= max_sample_length] = -1
-                cache_len_mask = len_rewards <= l_cache_length
-                if cache_len_mask.any():
-                    len_rewards[len_rewards <= l_cache_length] = 0
-                len_interval_mask = torch.logical_not(
-                    torch.logical_or(max_len_mask, cache_len_mask)
-                )
-                if len_interval_mask.any():
-                    len_rewards[len_interval_mask] = (
-                        l_cache_length - len_rewards[len_interval_mask]
-                    ) / (max_sample_length - l_cache_length)
-                rewards = correctness_rewards + len_rewards
-                rewards = norm(rewards)
+                with torch.no_grad():
+                    if res.shape[1] > max_train_length:
+                        seqs = torch.cat([input_ids, res[:, :max_train_length]], dim=1)
+                        hidden_cache = hidden_cache[:, : max_train_length - 1]
+                    else:
+                        seqs = torch.cat([input_ids, res], dim=1)
 
-            if acc_check_only:
-                continue
-
-            with torch.no_grad():
-                if res.shape[1] > max_train_length:
-                    seqs = torch.cat([input_ids, res[:, :max_train_length]], dim=1)
-                    hidden_cache = hidden_cache[:, : max_train_length - 1]
-                else:
-                    seqs = torch.cat([input_ids, res], dim=1)
+            # --- end of centralized validating ---
 
             # training
-            print("start training")
+            accelerator.print("start training")
             model.train()
             vae.train()
             gater.train()
             for epoch in range(num_epochs):
-                print("training epoch: ", epoch + 1)
+                accelerator.print("training epoch: ", epoch + 1)
                 cleanup()
-                for i in tqdm(
-                    range(0, res.shape[0], batch_size),
-                    desc=f"training epoch: {epoch + 1}",
-                ):
+                for i in range(0, res.shape[0], batch_size):
                     with accelerator.accumulate(model, vae, gater):
                         if step % train_gc_interval == 0:
                             cleanup()
@@ -253,7 +247,9 @@ def train():
                             if i + batch_size <= res.shape[0]
                             else res.shape[0]
                         )
-                        embeds = model.module.lm_head.weight[seqs[i:end]][:, :-1].to(device)
+                        embeds = model.module.lm_head.weight[seqs[i:end]][:, :-1].to(
+                            device
+                        )
                         hidden_cache_slice = hidden_cache[i:end]
                         with accelerator.autocast():
                             last_hidden = vae.module.uncompress(
@@ -286,17 +282,14 @@ def train():
 
                             # Get the parts we need to concatenate
                             embeds_first_part = embeds[:, : input_ids.shape[1]]
-                            embeds_second_part = gater(last_hidden, embeds[:, input_ids.shape[1] :])
-                            
+                            embeds_second_part = gater(
+                                last_hidden, embeds[:, input_ids.shape[1] :]
+                            )
+
                             # Ensure compatible tensor types for concatenation
-                            if hasattr(embeds_first_part, "_local_tensor") and not hasattr(embeds_second_part, "_local_tensor"):
-                                embeds_second_part = accelerator.prepare(embeds_second_part)
-                            elif hasattr(embeds_second_part, "_local_tensor") and not hasattr(embeds_first_part, "_local_tensor"):
-                                embeds_first_part = accelerator.prepare(embeds_first_part)
-                            
-                            # Now concatenate with compatible tensor types
-                            embeds = torch.cat(
-                                [embeds_first_part, embeds_second_part],
+                            embeds = tensor_concat(
+                                embeds_first_part,
+                                embeds_second_part,
                                 dim=1,
                             )
                             final_hidden, hidden = model_forward(
@@ -321,7 +314,9 @@ def train():
                             new_compressed_hidden = vae(
                                 hidden[:, input_ids.shape[1] - 1 : -1], compressing=True
                             )
-                            new_processed_hidden = vae.module.uncompress(new_compressed_hidden)
+                            new_processed_hidden = vae.module.uncompress(
+                                new_compressed_hidden
+                            )
                             if looping_depth > 0:  # deep looping
                                 for depth_i in range(looping_depth):
                                     for layer_i in range(
@@ -389,7 +384,7 @@ def train():
                 step_optimizer()
                 zero_grad_optimizer()
 
-                print(f"Step {step}, Loss: {loss.item():.3f}")
+                accelerator.print(f"Step {step}, Loss: {loss.item():.3f}")
                 gater.module.print_gates()
 
                 step += 1
@@ -401,7 +396,7 @@ def train():
             save_model(step)
 
     writer.close()
-    print("all done")
+    accelerator.print("all done")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,12 @@
 import gc
 import torch
-from vae_train.dataset import train_loader, test_loader, model, train_sampler, test_sampler
+from vae_train.dataset import (
+    train_loader,
+    test_loader,
+    model,
+    train_sampler,
+    test_sampler,
+)
 from vae_train.parameters import (
     device,
     accelerator,
@@ -27,7 +33,7 @@ def train_vae(epochs=num_epochs, collect_data=True):
     vae, optimizer, train_loader, test_loader = accelerator.prepare(
         vae, optimizer, train_loader, test_loader
     )
-    
+
     train_loss = []
     test_loss = []
 
@@ -35,7 +41,7 @@ def train_vae(epochs=num_epochs, collect_data=True):
         # Set epoch for distributed sampler
         if train_sampler is not None:
             train_sampler.set_epoch(epoch)
-            
+
         for step, (input_ids, attn_mask) in enumerate(train_loader):
             try:
                 cleanup()

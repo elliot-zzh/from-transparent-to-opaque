@@ -40,37 +40,48 @@ train_dataset = dataset(data_train)
 test_dataset = dataset(data_test)
 
 # Create samplers for distributed training
-train_sampler = DistributedSampler(
-    train_dataset, 
-    num_replicas=accelerator.num_processes,
-    rank=accelerator.process_index,
-    shuffle=True
-) if accelerator.num_processes > 1 else None
+train_sampler = (
+    DistributedSampler(
+        train_dataset,
+        num_replicas=accelerator.num_processes,
+        rank=accelerator.process_index,
+        shuffle=True,
+    )
+    if accelerator.num_processes > 1
+    else None
+)
 
-test_sampler = DistributedSampler(
-    test_dataset,
-    num_replicas=accelerator.num_processes,
-    rank=accelerator.process_index,
-    shuffle=False
-) if accelerator.num_processes > 1 else None
+test_sampler = (
+    DistributedSampler(
+        test_dataset,
+        num_replicas=accelerator.num_processes,
+        rank=accelerator.process_index,
+        shuffle=False,
+    )
+    if accelerator.num_processes > 1
+    else None
+)
+
 
 data_train = DataLoader(
-    train_dataset, 
-    batch_size=sample_problem_batch * sample_num, 
+    train_dataset,
+    batch_size=sample_problem_batch * sample_num,
     shuffle=(train_sampler is None),
     sampler=train_sampler,
     num_workers=4,
-    pin_memory=True
+    pin_memory=True,
 )
 
 data_test = DataLoader(
-    test_dataset, 
+    test_dataset,
     batch_size=sample_problem_batch * sample_num,
     shuffle=False,
     sampler=test_sampler,
     num_workers=4,
-    pin_memory=True
+    pin_memory=True,
 )
+
+data_train, data_test = accelerator.prepare(data_train, data_test)
 
 
 boxed_match = re.compile(r"\\boxed\{[^}]*\}")

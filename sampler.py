@@ -14,6 +14,9 @@ from tokenizer import im_end, eot
 from forward import model_forward
 from utils import cleanup
 
+# Set the print interval for logging
+print_interval = 16
+
 
 def sampler(
     input_ids,
@@ -33,8 +36,7 @@ def sampler(
     problem_batch_size = input_ids.shape[0]
     cache_pos = torch.arange(input_ids.shape[1], dtype=torch.long, device=device)
     kv_cache = DynamicCache()
-    if depth > 0:
-        deep_kv_cache = [DynamicCache() for _ in range(depth)]
+    deep_kv_cache = [DynamicCache() for _ in range(depth)]
 
     # prefill the problem
     with accelerator.autocast():
@@ -46,22 +48,28 @@ def sampler(
             kv_cache=kv_cache,
             extract_specific=hidden_layer_num,
         )
-        logits = model.module.lm_head(model.module.model.model.norm(final_hidden[:, -1, :])).float()
+        logits = model.module.lm_head(
+            model.module.model.model.norm(final_hidden[:, -1, :])
+        ).float()
 
     # Create tensors using the same device as input_ids to ensure consistent tensor types
-    hidden_cache = torch.zeros(problem_batch_size, 0, 256, device=input_ids.device, dtype=input_ids.dtype)
+    hidden_cache = torch.zeros(
+        problem_batch_size, 0, 256, device=input_ids.device, dtype=input_ids.dtype
+    )
 
     # text_end_appeared = False # if the first <｜end▁of▁sentence｜>
     gen_all_done = False
 
-    text_end_mask = torch.ones(problem_batch_size, dtype=torch.int8, device=input_ids.device)  # 1 -> not ended
-    text_end_indices = torch.ones(problem_batch_size, dtype=torch.long, device=input_ids.device) * (
-        max_length + input_ids.shape[1]
-    )
+    text_end_mask = torch.ones(
+        problem_batch_size, dtype=torch.int8, device=input_ids.device
+    )  # 1 -> not ended
+    text_end_indices = torch.ones(
+        problem_batch_size, dtype=torch.long, device=input_ids.device
+    ) * (max_length + input_ids.shape[1])
 
     res = torch.zeros(problem_batch_size, 0, dtype=torch.long, device=input_ids.device)
 
-    for i in tqdm(range(max_length), desc="sampling progress"):
+    for i in range(max_length):
         with accelerator.autocast():
             # Get the compressed hidden state and ensure it has the same type/device as hidden_cache
             compressed_hidden = F.dropout(
@@ -69,17 +77,21 @@ def sampler(
                 p=hidden_dropout_rate,
                 training=True,
             )
-            
+
             # Ensure both tensors have the same type before concatenation
-            if hasattr(hidden_cache, "_local_tensor") and not hasattr(compressed_hidden, "_local_tensor"):
+            if hasattr(hidden_cache, "_local_tensor") and not hasattr(
+                compressed_hidden, "_local_tensor"
+            ):
                 # If hidden_cache is DTensor, but compressed_hidden is regular tensor
                 # This ensures consistent tensor types for concatenation
                 compressed_hidden = accelerator.prepare(compressed_hidden)
-            elif hasattr(compressed_hidden, "_local_tensor") and not hasattr(hidden_cache, "_local_tensor"):
+            elif hasattr(compressed_hidden, "_local_tensor") and not hasattr(
+                hidden_cache, "_local_tensor"
+            ):
                 # If compressed_hidden is DTensor but hidden_cache is regular tensor,
                 # move hidden_cache to the same type
                 hidden_cache = accelerator.prepare(hidden_cache)
-                
+
             # Now perform concatenation with compatible tensor types
             hidden_cache = torch.cat([hidden_cache, compressed_hidden], dim=1)
             uncompressed_hidden = vae.module.uncompress(hidden_cache[:, -1:, :])
@@ -109,13 +121,17 @@ def sampler(
         )
         selected_index = indices.gather(1, selected_choice)
         selected_index[(1 - text_end_mask).bool(), :] = eot
-        
+
         # Handle tensor concatenation safely
-        if hasattr(res, "_local_tensor") and not hasattr(selected_index, "_local_tensor"):
+        if hasattr(res, "_local_tensor") and not hasattr(
+            selected_index, "_local_tensor"
+        ):
             selected_index = accelerator.prepare(selected_index)
-        elif hasattr(selected_index, "_local_tensor") and not hasattr(res, "_local_tensor"):
+        elif hasattr(selected_index, "_local_tensor") and not hasattr(
+            res, "_local_tensor"
+        ):
             res = accelerator.prepare(res)
-            
+
         res = torch.cat([res, selected_index], dim=1)
         selected_index = selected_index.view(problem_batch_size)
 
@@ -129,11 +145,17 @@ def sampler(
 
         # Handle attn_mask concatenation safely
         text_end_indices_unsqueezed = text_end_indices.unsqueeze(1)
-        if hasattr(attn_mask, "_local_tensor") and not hasattr(text_end_indices_unsqueezed, "_local_tensor"):
-            text_end_indices_unsqueezed = accelerator.prepare(text_end_indices_unsqueezed)
-        elif hasattr(text_end_indices_unsqueezed, "_local_tensor") and not hasattr(attn_mask, "_local_tensor"):
+        if hasattr(attn_mask, "_local_tensor") and not hasattr(
+            text_end_indices_unsqueezed, "_local_tensor"
+        ):
+            text_end_indices_unsqueezed = accelerator.prepare(
+                text_end_indices_unsqueezed
+            )
+        elif hasattr(text_end_indices_unsqueezed, "_local_tensor") and not hasattr(
+            attn_mask, "_local_tensor"
+        ):
             attn_mask = accelerator.prepare(attn_mask)
-            
+
         attn_mask = torch.cat(
             [attn_mask, text_end_indices_unsqueezed], dim=1
         )  # update attention mask
@@ -159,7 +181,14 @@ def sampler(
                 model.module.model.model.norm(final_hidden[:, -1, :])
             ).float()
 
+        if (i + 1) % print_interval == 0:
+            accelerator.print(
+                f"iter {i + 1} / {max_length}, "
+                f"sampled {res.shape[1]} tokens, "
+                f"hidden cache size: {hidden_cache.shape[1]}, "
+                f"hidden cache: {hidden_cache[-1, -1, :5]}..."
+            )
+
     cleanup()
-    if depth > 0:
-        return res, hidden_cache, text_end_indices, attn_mask
+
     return res, hidden_cache, text_end_indices, attn_mask

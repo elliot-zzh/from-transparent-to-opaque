@@ -40,16 +40,26 @@ class Data(Dataset):
                     max_length=1536,
                 )
                 # Ensure tensor compatibility before concatenation
-                if hasattr(self.data["input_ids"], "_local_tensor") and not hasattr(tmp["input_ids"], "_local_tensor"):
+                if hasattr(self.data["input_ids"], "_local_tensor") and not hasattr(
+                    tmp["input_ids"], "_local_tensor"
+                ):
                     tmp["input_ids"] = accelerator.prepare(tmp["input_ids"])
-                elif hasattr(tmp["input_ids"], "_local_tensor") and not hasattr(self.data["input_ids"], "_local_tensor"):
+                elif hasattr(tmp["input_ids"], "_local_tensor") and not hasattr(
+                    self.data["input_ids"], "_local_tensor"
+                ):
                     self.data["input_ids"] = accelerator.prepare(self.data["input_ids"])
-                
-                if hasattr(self.data["attention_mask"], "_local_tensor") and not hasattr(tmp["attention_mask"], "_local_tensor"):
+
+                if hasattr(
+                    self.data["attention_mask"], "_local_tensor"
+                ) and not hasattr(tmp["attention_mask"], "_local_tensor"):
                     tmp["attention_mask"] = accelerator.prepare(tmp["attention_mask"])
-                elif hasattr(tmp["attention_mask"], "_local_tensor") and not hasattr(self.data["attention_mask"], "_local_tensor"):
-                    self.data["attention_mask"] = accelerator.prepare(self.data["attention_mask"])
-                
+                elif hasattr(tmp["attention_mask"], "_local_tensor") and not hasattr(
+                    self.data["attention_mask"], "_local_tensor"
+                ):
+                    self.data["attention_mask"] = accelerator.prepare(
+                        self.data["attention_mask"]
+                    )
+
                 # Now concatenate with compatible tensor types
                 self.data["input_ids"] = torch.cat(
                     [self.data["input_ids"], tmp["input_ids"]], dim=0
@@ -78,19 +88,27 @@ train_data = Data(data_raw[: int(0.96 * total_size)])
 test_data = Data(data_raw[int(0.96 * total_size) : total_size])
 
 # Create distributed samplers if using multiple GPUs
-train_sampler = DistributedSampler(
-    train_data,
-    num_replicas=accelerator.num_processes,
-    rank=accelerator.process_index,
-    shuffle=True
-) if accelerator.num_processes > 1 else None
+train_sampler = (
+    DistributedSampler(
+        train_data,
+        num_replicas=accelerator.num_processes,
+        rank=accelerator.process_index,
+        shuffle=True,
+    )
+    if accelerator.num_processes > 1
+    else None
+)
 
-test_sampler = DistributedSampler(
-    test_data,
-    num_replicas=accelerator.num_processes,
-    rank=accelerator.process_index,
-    shuffle=False
-) if accelerator.num_processes > 1 else None
+test_sampler = (
+    DistributedSampler(
+        test_data,
+        num_replicas=accelerator.num_processes,
+        rank=accelerator.process_index,
+        shuffle=False,
+    )
+    if accelerator.num_processes > 1
+    else None
+)
 
 train_loader = DataLoader(
     train_data,
@@ -103,12 +121,12 @@ train_loader = DataLoader(
 )
 
 test_loader = DataLoader(
-    test_data, 
-    batch_size=batch_size, 
+    test_data,
+    batch_size=batch_size,
     shuffle=False,
     sampler=test_sampler,
-    num_workers=2, 
-    pin_memory=True
+    num_workers=2,
+    pin_memory=True,
 )
 
 model.eval()
