@@ -6,6 +6,8 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 from config import model_name
 from vae_train.parameters import batch_size
 
+import gc
+
 
 class Data(Dataset):
     def __init__(self, data_raw):

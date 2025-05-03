@@ -51,6 +51,7 @@ class Gate(nn.Module):
     def print_gates(self):
         print("gate value:", self.gate[:20])
 
+    # TODO: better output of gating value heatmap; also, we could pick gateing values from different training steps to generate a 2D image
     def print_heatmap(self):
         plt.imshow(
             self.gate.detach().cpu().numpy()[:20], cmap="hot", interpolation="nearest"

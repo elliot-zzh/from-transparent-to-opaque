@@ -1,6 +1,12 @@
+# main file.
+# enter from here:
+# python train.py
+
 import torch
 from tqdm import tqdm
 import torch.nn.functional as F
+from torch.optim import AdamW, CosineAnnealingLR, Adam
+import torch.nn as nn
 from config import device
 from data import data_train, verifier
 from model import (
@@ -15,7 +21,7 @@ from model import (
     tokenizer,
     hidden_regularizer,
 )
-from parameters import (
+from config import (
     max_train_length,
     acc_check_only,
     max_sample_length,
@@ -47,6 +53,22 @@ from parameters import (
 from forward import model_forward
 from sampler import sampler
 from utils import cleanup
+
+
+optimizers = [
+    AdamW(model.parameters(), lr=1e-5),
+    AdamW(vae.parameters(), lr=5e-5),
+    Adam(gater.parameters(), lr=3e-3),
+]
+gater_scheduler = CosineAnnealingLR(optimizers[2], T_max=500, eta_min=1e-3)
+(model, vae, gater, optimizers[0], optimizers[1], optimizers[2], data_train) = (
+    accelerator.prepare(
+        model, vae, gater, optimizers[0], optimizers[1], optimizers[2], data_train
+    )
+)
+
+lossf = nn.CrossEntropyLoss(reduction="none")
+hidden_regularizer = nn.MSELoss(reduction="none")
 
 
 def save_model(steps):
