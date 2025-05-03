@@ -112,11 +112,11 @@ def train():
 
                 for i in range(0, sample_problem_batch, sample_problem_sub_batch):
                     if init_res:
+                        batch_input = input_ids[
+                            i * sample_num : (i + sample_problem_sub_batch) * sample_num
+                        ]
                         res_, hidden_cache_, text_end_indices_, mask_ = sampler(
-                            input_ids[
-                                i * sample_num : (i + sample_problem_sub_batch)
-                                * sample_num
-                            ],
+                            batch_input,
                             problem_attn_mask[
                                 i * sample_num : (i + sample_problem_sub_batch)
                                 * sample_num
@@ -154,6 +154,7 @@ def train():
                 else:
                     seqs = torch.cat([input_ids, res], dim=1)
 
+                input_ids = accelerator.gather(input_ids)
                 res = accelerator.gather(res)
                 hidden_cache = accelerator.gather(hidden_cache)
                 text_end_indices = accelerator.gather(text_end_indices)
