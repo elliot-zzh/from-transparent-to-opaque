@@ -131,7 +131,7 @@ class Model(nn.Module):
             logits = self.model.lm_head(
                 self.model.model.model.norm(final_hidden)
             ).float()
-            loss = lossf()  # TODO: complete this
+            loss = lossf()  # TODO: complete loss computation all in here, including gater bonus and regularization
         else:
             logits = self.model.lm_head(
                 self.model.model.model.norm(final_hidden[:, -1, :])
@@ -149,7 +149,7 @@ class Model(nn.Module):
             # probs = probs.masked_fill(probs < min_p * 1 / topk, 0)
             selected_choice = torch.multinomial(probs.view(B, -1), num_samples=1)
             selected_index = indices.gather(1, selected_choice)
-            selected_index[(1 - text_end_mask).bool(), :] = eot
+            selected_index[(1 - text_end_mask).bool(), :] = eot # FIXME: text_end_mask ?
             res = torch.cat([res, selected_index], dim=1)
             selected_index = selected_index.view(B)
 
