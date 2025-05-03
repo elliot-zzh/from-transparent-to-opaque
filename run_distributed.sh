@@ -1,5 +1,7 @@
 #!/bin/bash
 
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+
 # Run distributed training with accelerate launch
 # This script launches distributed training across multiple GPUs
 

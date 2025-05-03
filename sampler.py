@@ -38,7 +38,7 @@ def sampler(
 
     # prefill the problem
     with accelerator.autocast():
-        embeds = model.model.model.embed_tokens(input_ids)
+        embeds = model.module.model.model.embed_tokens(input_ids)
         final_hidden, last_hidden = model_forward(
             hidden_state=embeds,
             attn_mask=attn_mask,
@@ -46,7 +46,7 @@ def sampler(
             kv_cache=kv_cache,
             extract_specific=hidden_layer_num,
         )
-        logits = model.lm_head(model.model.model.norm(final_hidden[:, -1, :])).float()
+        logits = model.module.lm_head(model.module.model.model.norm(final_hidden[:, -1, :])).float()
 
     # Create tensors using the same device as input_ids to ensure consistent tensor types
     hidden_cache = torch.zeros(problem_batch_size, 0, 256, device=input_ids.device, dtype=input_ids.dtype)
@@ -72,17 +72,17 @@ def sampler(
             
             # Ensure both tensors have the same type before concatenation
             if hasattr(hidden_cache, "_local_tensor") and not hasattr(compressed_hidden, "_local_tensor"):
-                # If hidden_cache is DTensor but compressed_hidden is regular tensor
+                # If hidden_cache is DTensor, but compressed_hidden is regular tensor
                 # This ensures consistent tensor types for concatenation
                 compressed_hidden = accelerator.prepare(compressed_hidden)
             elif hasattr(compressed_hidden, "_local_tensor") and not hasattr(hidden_cache, "_local_tensor"):
-                # If compressed_hidden is DTensor but hidden_cache is regular tensor
-                # Move hidden_cache to the same type
+                # If compressed_hidden is DTensor but hidden_cache is regular tensor,
+                # move hidden_cache to the same type
                 hidden_cache = accelerator.prepare(hidden_cache)
                 
             # Now perform concatenation with compatible tensor types
             hidden_cache = torch.cat([hidden_cache, compressed_hidden], dim=1)
-            uncompressed_hidden = vae.uncompress(hidden_cache[:, -1:, :])
+            uncompressed_hidden = vae.module.uncompress(hidden_cache[:, -1:, :])
 
             # more depth -- model looping
             if depth > 0:
@@ -144,7 +144,7 @@ def sampler(
         # forward
         with accelerator.autocast():
             cache_pos = cache_pos[-1:] + 1
-            embeds = model.model.model.embed_tokens(
+            embeds = model.module.model.model.embed_tokens(
                 selected_index.view(problem_batch_size, 1)
             )
             embeds = gater(uncompressed_hidden, embeds)
@@ -155,8 +155,8 @@ def sampler(
                 kv_cache=kv_cache,
                 extract_specific=hidden_layer_num,
             )
-            logits = model.lm_head(
-                model.model.model.norm(final_hidden[:, -1, :])
+            logits = model.module.lm_head(
+                model.module.model.model.norm(final_hidden[:, -1, :])
             ).float()
 
     cleanup()

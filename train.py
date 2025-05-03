@@ -253,10 +253,10 @@ def train():
                             if i + batch_size <= res.shape[0]
                             else res.shape[0]
                         )
-                        embeds = model.lm_head.weight[seqs[i:end]][:, :-1].to(device)
+                        embeds = model.module.lm_head.weight[seqs[i:end]][:, :-1].to(device)
                         hidden_cache_slice = hidden_cache[i:end]
                         with accelerator.autocast():
-                            last_hidden = vae.uncompress(
+                            last_hidden = vae.module.uncompress(
                                 F.dropout(
                                     hidden_cache_slice,
                                     p=hidden_dropout_rate,
@@ -307,8 +307,8 @@ def train():
                                 ),
                                 extract_specific=hidden_layer_num,
                             )
-                            logits = model.lm_head(
-                                model.model.model.norm(final_hidden)
+                            logits = model.module.lm_head(
+                                model.module.model.model.norm(final_hidden)
                             ).float()
                             loss = lossf(
                                 logits[:, input_ids.shape[1] - 1 :].transpose(1, 2),
@@ -321,7 +321,7 @@ def train():
                             new_compressed_hidden = vae(
                                 hidden[:, input_ids.shape[1] - 1 : -1], compressing=True
                             )
-                            new_processed_hidden = vae.uncompress(new_compressed_hidden)
+                            new_processed_hidden = vae.module.uncompress(new_compressed_hidden)
                             if looping_depth > 0:  # deep looping
                                 for depth_i in range(looping_depth):
                                     for layer_i in range(
@@ -337,10 +337,10 @@ def train():
                                             end_layer=hidden_layer_num,
                                         )
 
-                            new_processed_hidden = gater.forward_hidden(
+                            new_processed_hidden = gater.module.forward_hidden(
                                 new_processed_hidden, embeds[:, input_ids.shape[1] :]
                             )
-                            processed_hidden = gater.forward_hidden(
+                            processed_hidden = gater.module.forward_hidden(
                                 last_hidden, embeds[:, input_ids.shape[1] :]
                             )
                             hidden_loss = (
@@ -359,7 +359,7 @@ def train():
                             )
                             # apply gating value bonus
                             gate_bonus = torch.exp(
-                                gating_value_lambda * (0.5 - gater.gate) ** 2
+                                gating_value_lambda * (0.5 - gater.module.gate) ** 2
                             ).mean()
                             loss = (
                                 (loss.sum(dim=-1) * rewards[i:end]).sum()
@@ -390,7 +390,7 @@ def train():
                 zero_grad_optimizer()
 
                 print(f"Step {step}, Loss: {loss.item():.3f}")
-                gater.print_gates()
+                gater.module.print_gates()
 
                 step += 1
 
