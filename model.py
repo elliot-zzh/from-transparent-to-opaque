@@ -21,7 +21,6 @@ writer = SummaryWriter("runs/demo")
 # load the model
 model = AutoModelForCausalLM.from_pretrained(
     model_name,
-    device_map="auto",
     torch_dtype=torch.bfloat16,
     attn_implementation="sdpa",
 )
@@ -61,7 +60,3 @@ gater_scheduler = CosineAnnealingLR(optimizers[2], T_max=500, eta_min=1e-3)
 
 lossf = nn.CrossEntropyLoss(reduction="none")
 hidden_regularizer = nn.MSELoss(reduction="none")
-
-# end_of_text mark
-# eot = tokenizer('<｜end▁of▁sentence｜>').input_ids[1:][0]
-im_end, eot = tokenizer("<|im_end|><|endoftext|>").input_ids

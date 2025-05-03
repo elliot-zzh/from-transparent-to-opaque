@@ -6,3 +6,7 @@ prompt_suffix = "\n<|im_end|><|im_start|>\n"
 
 tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
 tokenizer.padding_side = "left"
+
+# end_of_text mark
+# eot = tokenizer('<｜end▁of▁sentence｜>').input_ids[1:][0]
+im_end, eot = tokenizer("<|im_end|><|endoftext|>").input_ids
