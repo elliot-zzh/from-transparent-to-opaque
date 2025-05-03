@@ -39,6 +39,18 @@ class Data(Dataset):
                     padding="max_length",
                     max_length=1536,
                 )
+                # Ensure tensor compatibility before concatenation
+                if hasattr(self.data["input_ids"], "_local_tensor") and not hasattr(tmp["input_ids"], "_local_tensor"):
+                    tmp["input_ids"] = accelerator.prepare(tmp["input_ids"])
+                elif hasattr(tmp["input_ids"], "_local_tensor") and not hasattr(self.data["input_ids"], "_local_tensor"):
+                    self.data["input_ids"] = accelerator.prepare(self.data["input_ids"])
+                
+                if hasattr(self.data["attention_mask"], "_local_tensor") and not hasattr(tmp["attention_mask"], "_local_tensor"):
+                    tmp["attention_mask"] = accelerator.prepare(tmp["attention_mask"])
+                elif hasattr(tmp["attention_mask"], "_local_tensor") and not hasattr(self.data["attention_mask"], "_local_tensor"):
+                    self.data["attention_mask"] = accelerator.prepare(self.data["attention_mask"])
+                
+                # Now concatenate with compatible tensor types
                 self.data["input_ids"] = torch.cat(
                     [self.data["input_ids"], tmp["input_ids"]], dim=0
                 )

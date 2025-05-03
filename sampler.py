@@ -48,33 +48,40 @@ def sampler(
         )
         logits = model.lm_head(model.model.model.norm(final_hidden[:, -1, :])).float()
 
-    hidden_cache = torch.Tensor(problem_batch_size, 0, 256).to(device)
+    # Create tensors using the same device as input_ids to ensure consistent tensor types
+    hidden_cache = torch.zeros(problem_batch_size, 0, 256, device=input_ids.device, dtype=input_ids.dtype)
 
     # text_end_appeared = False # if the first <｜end▁of▁sentence｜>
     gen_all_done = False
 
-    text_end_mask = torch.ones(problem_batch_size, dtype=torch.int8).to(
-        device
-    )  # 1 -> not ended
-    text_end_indices = torch.ones(problem_batch_size, dtype=torch.long).to(device) * (
+    text_end_mask = torch.ones(problem_batch_size, dtype=torch.int8, device=input_ids.device)  # 1 -> not ended
+    text_end_indices = torch.ones(problem_batch_size, dtype=torch.long, device=input_ids.device) * (
         max_length + input_ids.shape[1]
     )
 
-    res = torch.zeros(problem_batch_size, 0, dtype=torch.long).to(device)
+    res = torch.zeros(problem_batch_size, 0, dtype=torch.long, device=input_ids.device)
 
     for i in tqdm(range(max_length), desc="sampling progress"):
         with accelerator.autocast():
-            hidden_cache = torch.cat(
-                [
-                    hidden_cache,
-                    F.dropout(
-                        vae(last_hidden[:, -1:, :], compressing=True),
-                        p=hidden_dropout_rate,
-                        training=True,
-                    ),
-                ],
-                dim=1,
+            # Get the compressed hidden state and ensure it has the same type/device as hidden_cache
+            compressed_hidden = F.dropout(
+                vae(last_hidden[:, -1:, :], compressing=True),
+                p=hidden_dropout_rate,
+                training=True,
             )
+            
+            # Ensure both tensors have the same type before concatenation
+            if hasattr(hidden_cache, "_local_tensor") and not hasattr(compressed_hidden, "_local_tensor"):
+                # If hidden_cache is DTensor but compressed_hidden is regular tensor
+                # This ensures consistent tensor types for concatenation
+                compressed_hidden = accelerator.prepare(compressed_hidden)
+            elif hasattr(compressed_hidden, "_local_tensor") and not hasattr(hidden_cache, "_local_tensor"):
+                # If compressed_hidden is DTensor but hidden_cache is regular tensor
+                # Move hidden_cache to the same type
+                hidden_cache = accelerator.prepare(hidden_cache)
+                
+            # Now perform concatenation with compatible tensor types
+            hidden_cache = torch.cat([hidden_cache, compressed_hidden], dim=1)
             uncompressed_hidden = vae.uncompress(hidden_cache[:, -1:, :])
 
             # more depth -- model looping
@@ -102,6 +109,13 @@ def sampler(
         )
         selected_index = indices.gather(1, selected_choice)
         selected_index[(1 - text_end_mask).bool(), :] = eot
+        
+        # Handle tensor concatenation safely
+        if hasattr(res, "_local_tensor") and not hasattr(selected_index, "_local_tensor"):
+            selected_index = accelerator.prepare(selected_index)
+        elif hasattr(selected_index, "_local_tensor") and not hasattr(res, "_local_tensor"):
+            res = accelerator.prepare(res)
+            
         res = torch.cat([res, selected_index], dim=1)
         selected_index = selected_index.view(problem_batch_size)
 
@@ -113,8 +127,15 @@ def sampler(
             # if text_end_mask.sum() < problem_batch_size * 0.2 and text_end_indices.max() + 128 < i:
             #     gen_all_done = True
 
+        # Handle attn_mask concatenation safely
+        text_end_indices_unsqueezed = text_end_indices.unsqueeze(1)
+        if hasattr(attn_mask, "_local_tensor") and not hasattr(text_end_indices_unsqueezed, "_local_tensor"):
+            text_end_indices_unsqueezed = accelerator.prepare(text_end_indices_unsqueezed)
+        elif hasattr(text_end_indices_unsqueezed, "_local_tensor") and not hasattr(attn_mask, "_local_tensor"):
+            attn_mask = accelerator.prepare(attn_mask)
+            
         attn_mask = torch.cat(
-            [attn_mask, text_end_indices.unsqueeze(1)], dim=1
+            [attn_mask, text_end_indices_unsqueezed], dim=1
         )  # update attention mask
 
         if gen_all_done:

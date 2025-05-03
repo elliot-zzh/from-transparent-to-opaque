@@ -125,11 +125,31 @@ def train():
                             temperature=sample_temperature,
                             depth=looping_depth,
                         )
+                        # Safely concatenate tensors, ensuring compatible tensor types
+                        if hasattr(res, "_local_tensor") and not hasattr(res_, "_local_tensor"):
+                            res_ = accelerator.prepare(res_)
+                        elif hasattr(res_, "_local_tensor") and not hasattr(res, "_local_tensor"):
+                            res = accelerator.prepare(res)
                         res = torch.cat([res, res_], dim=0)
+                        
+                        if hasattr(hidden_cache, "_local_tensor") and not hasattr(hidden_cache_, "_local_tensor"):
+                            hidden_cache_ = accelerator.prepare(hidden_cache_)
+                        elif hasattr(hidden_cache_, "_local_tensor") and not hasattr(hidden_cache, "_local_tensor"):
+                            hidden_cache = accelerator.prepare(hidden_cache)
                         hidden_cache = torch.cat([hidden_cache, hidden_cache_], dim=0)
+                        
+                        if hasattr(text_end_indices, "_local_tensor") and not hasattr(text_end_indices_, "_local_tensor"):
+                            text_end_indices_ = accelerator.prepare(text_end_indices_)
+                        elif hasattr(text_end_indices_, "_local_tensor") and not hasattr(text_end_indices, "_local_tensor"):
+                            text_end_indices = accelerator.prepare(text_end_indices)
                         text_end_indices = torch.cat(
                             [text_end_indices, text_end_indices_], dim=0
                         )
+                        
+                        if hasattr(mask, "_local_tensor") and not hasattr(mask_, "_local_tensor"):
+                            mask_ = accelerator.prepare(mask_)
+                        elif hasattr(mask_, "_local_tensor") and not hasattr(mask, "_local_tensor"):
+                            mask = accelerator.prepare(mask)
                         mask = torch.cat([mask, mask_], dim=0)
                     else:
                         res, hidden_cache, text_end_indices, mask = sampler(
@@ -264,11 +284,19 @@ def train():
                                             end_layer=hidden_layer_num,
                                         )
 
+                            # Get the parts we need to concatenate
+                            embeds_first_part = embeds[:, : input_ids.shape[1]]
+                            embeds_second_part = gater(last_hidden, embeds[:, input_ids.shape[1] :])
+                            
+                            # Ensure compatible tensor types for concatenation
+                            if hasattr(embeds_first_part, "_local_tensor") and not hasattr(embeds_second_part, "_local_tensor"):
+                                embeds_second_part = accelerator.prepare(embeds_second_part)
+                            elif hasattr(embeds_second_part, "_local_tensor") and not hasattr(embeds_first_part, "_local_tensor"):
+                                embeds_first_part = accelerator.prepare(embeds_first_part)
+                            
+                            # Now concatenate with compatible tensor types
                             embeds = torch.cat(
-                                [
-                                    embeds[:, : input_ids.shape[1]],
-                                    gater(last_hidden, embeds[:, input_ids.shape[1] :]),
-                                ],
+                                [embeds_first_part, embeds_second_part],
                                 dim=1,
                             )
                             final_hidden, hidden = model_forward(
