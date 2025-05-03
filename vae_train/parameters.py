@@ -1,12 +1,16 @@
 import torch
+from accelerate import Accelerator
 
-device = torch.device(
-    "cuda"
-    if torch.cuda.is_available()
-    else "mps"
-    if torch.backends.mps.is_available()
-    else "cpu"
+# Use accelerator for distributed training
+accelerator = Accelerator(
+    mixed_precision="bf16", 
+    gradient_accumulation_steps=6,
+    device_placement=True,
+    log_with="tensorboard",
+    project_dir="./runs/vae_distributed"
 )
+device = accelerator.device
+
 batch_size = 20
 num_epochs = 30
 gradient_accumulation_steps = 6

@@ -1,10 +1,11 @@
 import polars as pl
 import torch
-from torch.utils.data import Dataset, DataLoader
+import gc
+from torch.utils.data import Dataset, DataLoader, DistributedSampler
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
 from config import model_name
-from vae_train.parameters import batch_size
+from vae_train.parameters import batch_size, accelerator
 
 
 class Data(Dataset):
@@ -63,16 +64,39 @@ data_raw = pl.read_parquet("/home/featurize/data/res-sampled.parquet")[
 total_size = len(data_raw)
 train_data = Data(data_raw[: int(0.96 * total_size)])
 test_data = Data(data_raw[int(0.96 * total_size) : total_size])
+
+# Create distributed samplers if using multiple GPUs
+train_sampler = DistributedSampler(
+    train_data,
+    num_replicas=accelerator.num_processes,
+    rank=accelerator.process_index,
+    shuffle=True
+) if accelerator.num_processes > 1 else None
+
+test_sampler = DistributedSampler(
+    test_data,
+    num_replicas=accelerator.num_processes,
+    rank=accelerator.process_index,
+    shuffle=False
+) if accelerator.num_processes > 1 else None
+
 train_loader = DataLoader(
     train_data,
     batch_size=batch_size,
-    shuffle=True,
+    shuffle=(train_sampler is None),
+    sampler=train_sampler,
     num_workers=4,
     pin_memory=True,
     persistent_workers=True,
 )
+
 test_loader = DataLoader(
-    test_data, batch_size=batch_size, num_workers=2, pin_memory=True
+    test_data, 
+    batch_size=batch_size, 
+    shuffle=False,
+    sampler=test_sampler,
+    num_workers=2, 
+    pin_memory=True
 )
 
 model.eval()

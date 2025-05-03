@@ -98,6 +98,10 @@ def train():
     step = 0
 
     while step <= total_steps:
+        # Set epoch for distributed sampler
+        if hasattr(data_train, "sampler") and hasattr(data_train.sampler, "set_epoch"):
+            data_train.sampler.set_epoch(step // len(data_train))
+            
         for input_ids, problem_attn_mask, ans in data_train:
             input_ids = input_ids.to(device)
             problem_attn_mask = problem_attn_mask.to(device)
@@ -229,7 +233,7 @@ def train():
                             if i + batch_size <= res.shape[0]
                             else res.shape[0]
                         )
-                        embeds = model.lm_head.weight[seqs[i:end]][:, :-1].to("cuda:0")
+                        embeds = model.lm_head.weight[seqs[i:end]][:, :-1].to(device)
                         hidden_cache_slice = hidden_cache[i:end]
                         with accelerator.autocast():
                             last_hidden = vae.uncompress(
