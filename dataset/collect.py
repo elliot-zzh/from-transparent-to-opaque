@@ -2,12 +2,13 @@ import re
 import os
 import json
 
-root = os.path.join('data', 'MATH')
+root = os.path.join("data", "MATH")
 
-pattern = re.compile(r'\\boxed\s*(?:{([^}]*)}|(\S))')
+pattern = re.compile(r"\\boxed\s*(?:{([^}]*)}|(\S))")
 
-boxed_single = re.compile(r'\\boxed\s+(\S)')  # matches \boxed x
-boxed_start = re.compile(r'\\boxed\s*{')      # detects \boxed{ start
+boxed_single = re.compile(r"\\boxed\s+(\S)")  # matches \boxed x
+boxed_start = re.compile(r"\\boxed\s*{")  # detects \boxed{ start
+
 
 def extract_answer(text):
     results = []
@@ -25,16 +26,17 @@ def extract_answer(text):
             depth = 1
             start = i
             while i < len(text) and depth > 0:
-                if text[i] == '{':
+                if text[i] == "{":
                     depth += 1
-                elif text[i] == '}':
+                elif text[i] == "}":
                     depth -= 1
                 i += 1
-            results.append(text[start:i-1])
+            results.append(text[start : i - 1])
             continue
 
         i += 1
     return results[0]
+
 
 def normalize_data(data: dict):
     """
@@ -43,18 +45,19 @@ def normalize_data(data: dict):
     :return: A dictionary with the normalized question, solution, and answer.
     """
     try:
-        answer = extract_answer(data['solution'])
+        answer = extract_answer(data["solution"])
         return {
-            'question': data['problem'],
-            'solution': data['solution'],
-            'answer': answer
+            "question": data["problem"],
+            "solution": data["solution"],
+            "answer": answer,
         }
     except ValueError as e:
         print(data)
         print(f"Error normalizing data: {e}")
         return None
 
-def extract_folder(mode='train'):
+
+def extract_folder(mode="train"):
     """
     Extracts the JSON files from the specified folder and normalizes the data.
     :param mode: The mode of the dataset (train, test, or val).
@@ -64,9 +67,9 @@ def extract_folder(mode='train'):
 
     for dirpath, _, files in os.walk(os.path.join(root, mode)):
         for file in files:
-            if file.endswith('.json'):
+            if file.endswith(".json"):
                 file_path = os.path.join(dirpath, file)
-                with open(file_path, 'r', encoding='utf-8') as f:
+                with open(file_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     normalized_data = normalize_data(data)
                     if normalized_data:
@@ -74,19 +77,21 @@ def extract_folder(mode='train'):
 
     return data_list
 
+
 def jsonl_dump(data_list, file_path):
     """
     Dumps the data list into a JSONL file.
     :param data_list: The list of data dictionaries to be dumped.
     :param file_path: The path to the output JSONL file.
     """
-    with open(file_path, 'w', encoding='utf-8') as f:
+    with open(file_path, "w", encoding="utf-8") as f:
         for data in data_list:
-            f.write(json.dumps(data) + '\n')
+            f.write(json.dumps(data) + "\n")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     # Example usage
-    train_data = extract_folder('train')
-    test_data = extract_folder('test')
-    jsonl_dump(train_data, os.path.join(root, 'train.jsonl'))
-    jsonl_dump(test_data, os.path.join(root, 'test.jsonl'))
+    train_data = extract_folder("train")
+    test_data = extract_folder("test")
+    jsonl_dump(train_data, os.path.join(root, "train.jsonl"))
+    jsonl_dump(test_data, os.path.join(root, "test.jsonl"))

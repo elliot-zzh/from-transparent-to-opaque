@@ -1,18 +1,25 @@
 import gc
 import torch
-from vae.dataset import train_loader, test_loader, model
-from vae.parameters import device, num_epochs, gradient_accumulation_steps, log_interval, hidden_layer_num, \
-    save_interval
-from vae.vae_model import optimizer, scaler, vae, lossf
+from vae_train.dataset import train_loader, test_loader, model
+from vae_train.parameters import (
+    device,
+    num_epochs,
+    gradient_accumulation_steps,
+    log_interval,
+    hidden_layer_num,
+    save_interval,
+)
+from vae_train.vae_model import optimizer, scaler, vae, lossf
 import matplotlib.pyplot as plt
 
 
 def cleanup():
     gc.collect()
-    if device == 'cuda':
+    if device == "cuda":
         torch.cuda.empty_cache()
-    elif device == 'mps':
+    elif device == "mps":
         torch.mps.empty_cache()
+
 
 def train_vae(epochs=num_epochs, collect_data=True):
     train_loss = []
@@ -30,8 +37,16 @@ def train_vae(epochs=num_epochs, collect_data=True):
 
                 with torch.amp.autocast(device_type=str(device), dtype=torch.float16):
                     with torch.no_grad():
-                        hidden = model(input_ids=input_ids, attention_mask=attn_mask, output_hidden_states=True,
-                                       return_dict=True).hidden_states[hidden_layer_num].float()
+                        hidden = (
+                            model(
+                                input_ids=input_ids,
+                                attention_mask=attn_mask,
+                                output_hidden_states=True,
+                                return_dict=True,
+                            )
+                            .hidden_states[hidden_layer_num]
+                            .float()
+                        )
                 loss = lossf(vae(hidden), hidden)
                 loss = loss / gradient_accumulation_steps
 
@@ -43,7 +58,9 @@ def train_vae(epochs=num_epochs, collect_data=True):
                     optimizer.zero_grad(set_to_none=True)
 
                 if (step + 1) % (gradient_accumulation_steps * log_interval) == 0:
-                    print(f"Epoch {epoch + 1}, Step {step + 1}, Train Loss: {loss.item():.3f}")
+                    print(
+                        f"Epoch {epoch + 1}, Step {step + 1}, Train Loss: {loss.item():.3f}"
+                    )
 
             except KeyboardInterrupt:
                 cleanup()
@@ -68,9 +85,19 @@ def train_vae(epochs=num_epochs, collect_data=True):
                 attn_mask = attn_mask.to(device)
 
                 with torch.no_grad():
-                    with torch.amp.autocast(device_type=str(device), dtype=torch.float16):
-                        hidden = model(input_ids=input_ids, attention_mask=attn_mask, output_hidden_states=True,
-                                       return_dict=True).hidden_states[hidden_layer_num].float()
+                    with torch.amp.autocast(
+                        device_type=str(device), dtype=torch.float16
+                    ):
+                        hidden = (
+                            model(
+                                input_ids=input_ids,
+                                attention_mask=attn_mask,
+                                output_hidden_states=True,
+                                return_dict=True,
+                            )
+                            .hidden_states[hidden_layer_num]
+                            .float()
+                        )
                     loss += lossf(vae(hidden), hidden)
                     count += 1
 
@@ -94,14 +121,14 @@ def train_vae(epochs=num_epochs, collect_data=True):
     if collect_data:
         print("Now plotting the loss")
 
-        plt.plot(train_loss, label='Train Loss')
-        plt.plot(test_loss, label='Test Loss')
+        plt.plot(train_loss, label="Train Loss")
+        plt.plot(test_loss, label="Test Loss")
 
-        plt.xlabel('Epoch')
-        plt.ylabel('Loss')
-        plt.title('VAE Training Loss')
+        plt.xlabel("Epoch")
+        plt.ylabel("Loss")
+        plt.title("VAE Training Loss")
         plt.legend()
-        plt.savefig('vae_training_loss.pdf')
-        plt.savefig('vae_training_loss.png')
+        plt.savefig("vae_training_loss.pdf")
+        plt.savefig("vae_training_loss.png")
 
         print("Loss plot saved as vae_training_loss.pdf and vae_training_loss.png")
