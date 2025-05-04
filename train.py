@@ -214,38 +214,38 @@ def train():
                     res = res[filt]
                     text_end_indices = text_end_indices[filt]
 
-            if accelerator.is_main_process:
-                accelerator.print("correctness: ", correctness)
-                writer.add_scalar("correctness/train", correctness, step)
+                    if accelerator.is_main_process:
+                        accelerator.print("correctness: ", correctness)
+                        writer.add_scalar("correctness/train", correctness, step)
 
-                # reward normalization to get advantage
-                max_len_mask = len_rewards >= max_sample_length
-                if max_len_mask.any():
-                    len_rewards[len_rewards >= max_sample_length] = -1
-                cache_len_mask = len_rewards <= l_cache_length
-                if cache_len_mask.any():
-                    len_rewards[len_rewards <= l_cache_length] = 0
-                len_interval_mask = torch.logical_not(
-                    torch.logical_or(max_len_mask, cache_len_mask)
-                )
-                if len_interval_mask.any():
-                    len_rewards[len_interval_mask] = (
-                        l_cache_length - len_rewards[len_interval_mask]
-                    ) / (max_sample_length - l_cache_length)
-                rewards = correctness_rewards + len_rewards
-                rewards = norm(rewards)
+                        # reward normalization to get advantage
+                        max_len_mask = len_rewards >= max_sample_length
+                        if max_len_mask.any():
+                            len_rewards[len_rewards >= max_sample_length] = -1
+                        cache_len_mask = len_rewards <= l_cache_length
+                        if cache_len_mask.any():
+                            len_rewards[len_rewards <= l_cache_length] = 0
+                        len_interval_mask = torch.logical_not(
+                            torch.logical_or(max_len_mask, cache_len_mask)
+                        )
+                        if len_interval_mask.any():
+                            len_rewards[len_interval_mask] = (
+                                l_cache_length - len_rewards[len_interval_mask]
+                            ) / (max_sample_length - l_cache_length)
+                        rewards = correctness_rewards + len_rewards
+                        rewards = norm(rewards)
 
-                rewards = broadcast(rewards)
-            else:
-                rewards = torch.zeros(correctness, device=accelerator.device)
+                        rewards = broadcast(rewards)
+                    else:
+                        rewards = torch.zeros(correctness, device=accelerator.device)
 
-            accelerator.wait_for_everyone()
+                    accelerator.wait_for_everyone()
 
-            # if res.shape[1] > max_train_length:
-            # hidden_cache = hidden_cache[:, : max_train_length - 1] ####
+                    # if res.shape[1] > max_train_length:
+                    # hidden_cache = hidden_cache[:, : max_train_length - 1] ####
 
-            if acc_check_only:
-                continue
+                    if acc_check_only:
+                        continue
 
             # --- end of centralized validating ---
 
