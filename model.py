@@ -52,10 +52,24 @@ optimizers = [
     Adam(gater.parameters(), lr=3e-3),
 ]
 gater_scheduler = CosineAnnealingLR(optimizers[2], T_max=500, eta_min=1e-3)
-(model, vae, gater, optimizers[0], optimizers[1], optimizers[2], data_train) = (
-    accelerator.prepare(
-        model, vae, gater, optimizers[0], optimizers[1], optimizers[2], data_train
-    )
+(
+    model,
+    vae,
+    gater,
+    optimizers[0],
+    optimizers[1],
+    optimizers[2],
+    data_train,
+    gater_scheduler,
+) = accelerator.prepare(
+    model,
+    vae,
+    gater,
+    optimizers[0],
+    optimizers[1],
+    optimizers[2],
+    data_train,
+    gater_scheduler,
 )
 
 lossf = nn.CrossEntropyLoss(reduction="none")

@@ -46,6 +46,7 @@ from parameters import (
 from forward import model_forward
 from sampler import sampler
 from utils import cleanup
+from accelerate.utils import broadcast
 
 
 def save_model(steps):
@@ -161,31 +162,37 @@ def train():
                 mask = accelerator.gather(mask)
                 seqs = accelerator.gather(seqs)
 
-                if accelerator.is_main_process:
-                    hidden_cache = hidden_cache[:, :-1]
+                hidden_cache = hidden_cache[:, :-1]
 
-                    correctness_rewards = torch.Tensor(
-                        verifier(
-                            tokenizer.batch_decode(res, skip_special_tokens=True),
-                            ans,
-                            corr_score=corr_reward,
-                        )
-                    ).to(device)
-                    accelerator.print(tokenizer.decode(res[0]))
-                    len_rewards = text_end_indices.float() + 1
+                correctness_rewards = torch.Tensor(
+                    verifier(
+                        tokenizer.batch_decode(res, skip_special_tokens=True),
+                        ans,
+                        corr_score=corr_reward,
+                    )
+                ).to(device)
+                accelerator.print(tokenizer.decode(res[0]))
 
-                    filt = None
-                    if (
-                        l := (corr_filt := correctness_rewards == corr_reward).sum()
-                    ) < res.shape[
-                        0
-                    ] / 3 and l != 0:  # clip too many wrong answers, currently 1:1
-                        incorr_filt = torch.ones(sample_num * sample_problem_batch).to(
-                            device
-                        )
+                correctness = (
+                    (corr_filt := correctness_rewards == corr_reward).sum().cpu().item()
+                )
+
+                if correctness == 0:
+                    accelerator.print("Resampling")
+                    continue
+
+                len_rewards = text_end_indices.float() + 1
+                # clip too many wrong answers, currently 1:1
+                if correctness < res.shape[0] / 3:
+                    if accelerator.is_main_process:
+                        incorr_filt = torch.ones(
+                            sample_num
+                            * sample_problem_batch
+                            * accelerator.num_processes
+                        ).to(device)
                         incorr_filt[correctness_rewards == 1] = 0
                         incorr_filt = torch.multinomial(
-                            incorr_filt, num_samples=(l * 2).item()
+                            incorr_filt, num_samples=correctness * 2
                         )
                         filt = torch.cat(
                             [torch.nonzero(corr_filt, as_tuple=True)[0], incorr_filt],
@@ -193,46 +200,52 @@ def train():
                         )
                         filt = filt[torch.randperm(filt.size(0))]
 
-                        torch.distributed.broadcast(filt, 0)
+                        filt = broadcast(filt)
+                    else:
+                        filt = torch.zeros(3 * correctness)
 
-                        correctness_rewards = correctness_rewards[filt]
-                        len_rewards = len_rewards[filt]
-                        mask = mask[filt]
-                        input_ids = input_ids[filt]
-                        hidden_cache = hidden_cache[filt]
-                        res = res[filt]
-                        text_end_indices = text_end_indices[filt]
+                    accelerator.wait_for_everyone()
 
-                    correctness = l.cpu().item()
-                    if correctness == 0:
-                        accelerator.print("NG. Re")
-                        continue
-                    accelerator.print("correctness: ", correctness)
-                    writer.add_scalar("correctness/train", correctness, step)
+                    correctness_rewards = correctness_rewards[filt]
+                    len_rewards = len_rewards[filt]
+                    mask = mask[filt]
+                    input_ids = input_ids[filt]
+                    hidden_cache = hidden_cache[filt]
+                    res = res[filt]
+                    text_end_indices = text_end_indices[filt]
 
-                    # reward normalization to get advantage
-                    max_len_mask = len_rewards >= max_sample_length
-                    if max_len_mask.any():
-                        len_rewards[len_rewards >= max_sample_length] = -1
-                    cache_len_mask = len_rewards <= l_cache_length
-                    if cache_len_mask.any():
-                        len_rewards[len_rewards <= l_cache_length] = 0
-                    len_interval_mask = torch.logical_not(
-                        torch.logical_or(max_len_mask, cache_len_mask)
-                    )
-                    if len_interval_mask.any():
-                        len_rewards[len_interval_mask] = (
-                            l_cache_length - len_rewards[len_interval_mask]
-                        ) / (max_sample_length - l_cache_length)
-                    rewards = correctness_rewards + len_rewards
-                    rewards = norm(rewards)
+            if accelerator.is_main_process:
+                accelerator.print("correctness: ", correctness)
+                writer.add_scalar("correctness/train", correctness, step)
 
-                if acc_check_only:
-                    continue
+                # reward normalization to get advantage
+                max_len_mask = len_rewards >= max_sample_length
+                if max_len_mask.any():
+                    len_rewards[len_rewards >= max_sample_length] = -1
+                cache_len_mask = len_rewards <= l_cache_length
+                if cache_len_mask.any():
+                    len_rewards[len_rewards <= l_cache_length] = 0
+                len_interval_mask = torch.logical_not(
+                    torch.logical_or(max_len_mask, cache_len_mask)
+                )
+                if len_interval_mask.any():
+                    len_rewards[len_interval_mask] = (
+                        l_cache_length - len_rewards[len_interval_mask]
+                    ) / (max_sample_length - l_cache_length)
+                rewards = correctness_rewards + len_rewards
+                rewards = norm(rewards)
 
-                with torch.no_grad():
-                    if res.shape[1] > max_train_length:
-                        hidden_cache = hidden_cache[:, : max_train_length - 1]
+                rewards = broadcast(rewards)
+            else:
+                rewards = torch.zeros(correctness, device=accelerator.device)
+
+            accelerator.wait_for_everyone()
+
+            # if res.shape[1] > max_train_length:
+            # hidden_cache = hidden_cache[:, : max_train_length - 1] ####
+
+            if acc_check_only:
+                continue
 
             # --- end of centralized validating ---
 
@@ -244,8 +257,14 @@ def train():
             for epoch in range(num_epochs):
                 accelerator.print("training epoch: ", epoch + 1)
                 cleanup()
-                for i in range(0, res.shape[0], batch_size):
-                    with accelerator.accumulate(model, vae, gater):
+                self_batch_size = res.shape[0] // accelerator.num_processes
+                for i in range(
+                    self_batch_size * accelerator.process_index,
+                    self_batch_size * accelerator.process_index + self_batch_size,
+                    batch_size,
+                ):
+                    if True:
+                        accelerator.print(i)
                         if step % train_gc_interval == 0:
                             cleanup()
                         end = (
@@ -253,18 +272,23 @@ def train():
                             if i + batch_size <= res.shape[0]
                             else res.shape[0]
                         )
-                        embeds = model.module.lm_head.weight[seqs[i:end]][:, :-1].to(
-                            device
-                        )
                         hidden_cache_slice = hidden_cache[i:end]
+                        print("slice", hidden_cache_slice.shape)
+                        print("autocast")
                         with accelerator.autocast():
-                            last_hidden = vae.module.uncompress(
-                                F.dropout(
-                                    hidden_cache_slice,
-                                    p=hidden_dropout_rate,
-                                    training=True,
-                                )
+                            embeds = model.module.lm_head.weight[seqs[i:end]][
+                                :, :-1
+                            ].to(device)
+                            print(embeds.shape)
+                            print("rate", hidden_dropout_rate)
+                            print("hello", hidden_cache_slice)
+                            dropouted = F.dropout(
+                                hidden_cache_slice,
+                                p=hidden_dropout_rate,
+                                training=True,
                             )
+                            last_hidden = vae.module.uncompress(dropouted)
+                            print("vae result", last_hidden)
                             if looping_depth > 0:  # deep looping
                                 hidden_pos = torch.arange(
                                     0,
@@ -272,10 +296,13 @@ def train():
                                     dtype=torch.long,
                                     device=device,
                                 )
+                                print("hidden_pos", hidden_pos)
                                 for depth_i in range(looping_depth):
+                                    print(depth_i)
                                     for layer_i in range(
                                         depth_start_layer_num, hidden_layer_num
                                     ):
+                                        print(layer_i)
                                         last_hidden = model_forward(
                                             hidden_state=last_hidden,
                                             attn_mask=mask[
@@ -286,6 +313,7 @@ def train():
                                             end_layer=hidden_layer_num,
                                         )
 
+                            print("embed")
                             # Get the parts we need to concatenate
                             embeds_first_part = embeds[:, : input_ids.shape[1]]
                             embeds_second_part = gater(
@@ -316,6 +344,8 @@ def train():
                                 ),
                             )
 
+                            print("loss")
+
                             # compute loss
                             new_compressed_hidden = vae(
                                 hidden[:, input_ids.shape[1] - 1 : -1], compressing=True
@@ -338,12 +368,15 @@ def train():
                                             end_layer=hidden_layer_num,
                                         )
 
+                            print("gating")
+
                             new_processed_hidden = gater.module.forward_hidden(
                                 new_processed_hidden, embeds[:, input_ids.shape[1] :]
                             )
                             processed_hidden = gater.module.forward_hidden(
                                 last_hidden, embeds[:, input_ids.shape[1] :]
                             )
+                            print("lossing")
                             hidden_loss = (
                                 hidden_regularizer(
                                     new_processed_hidden, processed_hidden
@@ -358,6 +391,7 @@ def train():
                                 1,
                                 hidden_reg_len_bonus_high,
                             )
+                            print("bonus")
                             # apply gating value bonus
                             gate_bonus = torch.exp(
                                 gating_value_lambda * (0.5 - gater.module.gate) ** 2
@@ -372,8 +406,9 @@ def train():
                                 * gating_value_decay
                                 ** (step // gating_bonus_update_step)
                             )
-                            # loss *= batch_size / res.shape[0]
-                            loss *= batch_size
+                            loss *= batch_size / res.shape[0]
+
+                            print("upd")
 
                             # randomly update hidden cache
                             with torch.no_grad():
@@ -385,7 +420,11 @@ def train():
                                     new_compressed_hidden[:, update_index]
                                 )
 
+                        print("back")
+
                         accelerator.backward(loss)
+
+                print("step")
 
                 step_optimizer()
                 zero_grad_optimizer()
