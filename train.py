@@ -237,7 +237,7 @@ def train():
 
                         rewards = broadcast(rewards)
                     else:
-                        rewards = torch.zeros(correctness * 3, device=accelerator.device)
+                        rewards = torch.zeros(min(correctness * 3, sample_problem_batch * sample_num), device=accelerator.device)
 
                     accelerator.wait_for_everyone()
 
