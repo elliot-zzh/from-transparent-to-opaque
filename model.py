@@ -22,9 +22,9 @@ writer = SummaryWriter("runs/demo")
 model = AutoModelForCausalLM.from_pretrained(
     model_name,
     torch_dtype=torch.bfloat16,
+    # attn_implementation="flash_attention_2",
     attn_implementation="sdpa",
 )
-torch.backends.cuda.enable_flash_sdp(True)
 
 # inject LoRA
 peft_config = LoraConfig(

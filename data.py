@@ -11,6 +11,8 @@ from config import accelerator
 data_train = pd.read_json("/home/featurize/data/train.jsonl", lines=True)
 data_test = pd.read_json("/home/featurize/data/test.jsonl", lines=True)
 
+# TODO: will make use of data_test later
+
 
 class dataset(Dataset):
     def __init__(self, df):
@@ -37,7 +39,7 @@ class dataset(Dataset):
 
 
 train_dataset = dataset(data_train)
-test_dataset = dataset(data_test)
+# test_dataset = dataset(data_test)
 
 # Create samplers for distributed training
 train_sampler = (
@@ -50,7 +52,7 @@ train_sampler = (
     if accelerator.num_processes > 1
     else None
 )
-
+"""
 test_sampler = (
     DistributedSampler(
         test_dataset,
@@ -62,7 +64,7 @@ test_sampler = (
     else None
 )
 
-
+"""
 data_train = DataLoader(
     train_dataset,
     batch_size=sample_problem_batch * sample_num,
@@ -71,7 +73,7 @@ data_train = DataLoader(
     num_workers=4,
     pin_memory=True,
 )
-
+"""
 data_test = DataLoader(
     test_dataset,
     batch_size=sample_problem_batch * sample_num,
@@ -80,8 +82,9 @@ data_test = DataLoader(
     num_workers=4,
     pin_memory=True,
 )
-
-data_train, data_test = accelerator.prepare(data_train, data_test)
+"""
+# data_train, data_test = accelerator.prepare(data_train, data_test)
+data_train = accelerator.prepare(data_train)
 
 
 boxed_match = re.compile(r"\\boxed\{[^}]*\}")
