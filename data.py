@@ -1,13 +1,17 @@
 import re
-from torch.utils.data import DataLoader, Dataset
+import torch
+from torch.utils.data import DataLoader, Dataset, DistributedSampler
 import pandas as pd
 from math_verify import parse, verify
 from tokenizer import prompt, prompt_suffix
 from parameters import sample_problem_batch, sample_num
 from utils import tokenize
+from config import accelerator
 
 data_train = pd.read_json("/home/featurize/data/train.jsonl", lines=True)
 data_test = pd.read_json("/home/featurize/data/test.jsonl", lines=True)
+
+# TODO: will make use of data_test later
 
 
 class dataset(Dataset):
@@ -34,10 +38,53 @@ class dataset(Dataset):
         return self.input_ids[index], self.attn_mask[index], self.ans[index]
 
 
-data_train = DataLoader(
-    dataset(data_train), batch_size=sample_problem_batch * sample_num, shuffle=True
+train_dataset = dataset(data_train)
+# test_dataset = dataset(data_test)
+
+# Create samplers for distributed training
+train_sampler = (
+    DistributedSampler(
+        train_dataset,
+        num_replicas=accelerator.num_processes,
+        rank=accelerator.process_index,
+        shuffle=True,
+    )
+    if accelerator.num_processes > 1
+    else None
 )
-data_test = DataLoader(dataset(data_test), batch_size=sample_problem_batch * sample_num)
+"""
+test_sampler = (
+    DistributedSampler(
+        test_dataset,
+        num_replicas=accelerator.num_processes,
+        rank=accelerator.process_index,
+        shuffle=False,
+    )
+    if accelerator.num_processes > 1
+    else None
+)
+
+"""
+data_train = DataLoader(
+    train_dataset,
+    batch_size=sample_problem_batch * sample_num,
+    shuffle=(train_sampler is None),
+    sampler=train_sampler,
+    num_workers=4,
+    pin_memory=True,
+)
+"""
+data_test = DataLoader(
+    test_dataset,
+    batch_size=sample_problem_batch * sample_num,
+    shuffle=False,
+    sampler=test_sampler,
+    num_workers=4,
+    pin_memory=True,
+)
+"""
+# data_train, data_test = accelerator.prepare(data_train, data_test)
+data_train = accelerator.prepare(data_train)
 
 
 boxed_match = re.compile(r"\\boxed\{[^}]*\}")

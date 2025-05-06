@@ -21,11 +21,10 @@ writer = SummaryWriter("runs/demo")
 # load the model
 model = AutoModelForCausalLM.from_pretrained(
     model_name,
-    device_map="auto",
     torch_dtype=torch.bfloat16,
+    # attn_implementation="flash_attention_2",
     attn_implementation="sdpa",
 )
-torch.backends.cuda.enable_flash_sdp(True)
 
 # inject LoRA
 peft_config = LoraConfig(
@@ -53,15 +52,25 @@ optimizers = [
     Adam(gater.parameters(), lr=3e-3),
 ]
 gater_scheduler = CosineAnnealingLR(optimizers[2], T_max=500, eta_min=1e-3)
-(model, vae, gater, optimizers[0], optimizers[1], optimizers[2], data_train) = (
-    accelerator.prepare(
-        model, vae, gater, optimizers[0], optimizers[1], optimizers[2], data_train
-    )
+(
+    model,
+    vae,
+    gater,
+    optimizers[0],
+    optimizers[1],
+    optimizers[2],
+    data_train,
+    gater_scheduler,
+) = accelerator.prepare(
+    model,
+    vae,
+    gater,
+    optimizers[0],
+    optimizers[1],
+    optimizers[2],
+    data_train,
+    gater_scheduler,
 )
 
 lossf = nn.CrossEntropyLoss(reduction="none")
 hidden_regularizer = nn.MSELoss(reduction="none")
-
-# end_of_text mark
-# eot = tokenizer('<｜end▁of▁sentence｜>').input_ids[1:][0]
-im_end, eot = tokenizer("<|im_end|><|endoftext|>").input_ids
