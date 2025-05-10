@@ -43,6 +43,8 @@ from parameters import (
     gating_bonus_update_step,
     hidden_updating_rate,
     save_interval,
+    clip_high,
+    clip_low,
 )
 from forward import model_forward
 from sampler import sampler
@@ -96,6 +98,7 @@ norm = torch.jit.script(norm)
 
 def train():
     step = 0
+    init_res = False
 
     while step <= total_steps:
         for input_ids, problem_attn_mask, ans in data_train:
@@ -103,10 +106,9 @@ def train():
             problem_attn_mask = problem_attn_mask.to(device)
             cleanup()
             with torch.no_grad():
-                init_res = False
                 for i in range(0, sample_problem_batch, sample_problem_sub_batch):
                     if init_res:
-                        res_, hidden_cache_, text_end_indices_, mask_ = sampler(
+                        res_, res_probs_, hidden_cache_, text_end_indices_, mask_ = sampler(
                             input_ids[
                                 i * sample_num : (i + sample_problem_sub_batch)
                                 * sample_num
@@ -122,13 +124,14 @@ def train():
                             depth=looping_depth,
                         )
                         res = torch.cat([res, res_], dim=0)
+                        res_probs = torch.cat([res, res_probs_], dim=0)
                         hidden_cache = torch.cat([hidden_cache, hidden_cache_], dim=0)
                         text_end_indices = torch.cat(
                             [text_end_indices, text_end_indices_], dim=0
                         )
                         mask = torch.cat([mask, mask_], dim=0)
                     else:
-                        res, hidden_cache, text_end_indices, mask = sampler(
+                        res, res_probs, hidden_cache, text_end_indices, mask = sampler(
                             input_ids[: sample_problem_sub_batch * sample_num],
                             problem_attn_mask[: sample_problem_sub_batch * sample_num],
                             num=sample_num,
@@ -140,7 +143,7 @@ def train():
 
                     cleanup()
 
-                hidden_cache = hidden_cache[:, :-1]
+                hidden_cache = hidden_cache[:, :-1] # truncate the end
 
                 correctness_rewards = torch.Tensor(
                     verifier(
@@ -151,11 +154,15 @@ def train():
                 ).to(device)
                 print(tokenizer.decode(res[0]))
                 len_rewards = text_end_indices.float() + 1
+                l = (corr_filt := correctness_rewards == corr_reward).sum()
+                
+                if l < 10:
+                    continue
+                    
+                init_res = False
 
                 filt = None
-                if (
-                    l := (corr_filt := correctness_rewards == corr_reward).sum()
-                ) < res.shape[
+                if l < res.shape[
                     0
                 ] / 3 and l != 0:  # clip too many wrong answers, currently 1:1
                     incorr_filt = torch.ones(sample_num * sample_problem_batch).to(
@@ -221,7 +228,7 @@ def train():
                     range(0, res.shape[0], batch_size),
                     desc=f"training epoch: {epoch + 1}",
                 ):
-                    with accelerator.accumulate(model, vae, gater):
+                    if True:
                         if step % train_gc_interval == 0:
                             cleanup()
                         end = (
@@ -278,13 +285,24 @@ def train():
                             logits = model.lm_head(
                                 model.model.model.norm(final_hidden)
                             ).float()
+
+                            '''
                             loss = lossf(
                                 logits[:, input_ids.shape[1] - 1 :].transpose(1, 2),
                                 seqs[i:end, input_ids.shape[1] :].masked_fill(
                                     mask[i:end, input_ids.shape[1] :] == 0, -100
                                 ),
                             )
+                            '''
 
+                            # compute loss
+                            target = seqs[i:end, input_ids.shape[1]:]
+                            target[target >= logits.shape[-1]] = 0
+                            new_probs = F.softmax(logits[:, input_ids.shape[1] - 1:], dim=-1).gather(-1, target.unsqueeze(-1)).squeeze(-1)
+                            loss = new_probs / res_probs[i:end]
+                            loss[loss > clip_high + 1] = 1 + clip_high
+                            loss[loss < 1 - clip_low] = 1 - clip_low
+                            
                             # compute loss
                             new_compressed_hidden = vae(
                                 hidden[:, input_ids.shape[1] - 1 : -1], compressing=True
@@ -319,7 +337,7 @@ def train():
                             )
                             # apply hidden regularization bonus
                             hidden_loss = hidden_loss * linear_interpl(
-                                (text_end_indices + 1)[i : i + batch_size],
+                                (text_end_indices + 1)[i : end],
                                 hidden_reg_len_bonus_a,
                                 max_sample_length,
                                 1,
@@ -339,8 +357,7 @@ def train():
                                 * gating_value_decay
                                 ** (step // gating_bonus_update_step)
                             )
-                            # loss *= batch_size / res.shape[0]
-                            loss *= batch_size
+                            loss *= batch_size / res.shape[0]
 
                             # randomly update hidden cache
                             with torch.no_grad():

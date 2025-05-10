@@ -22,7 +22,7 @@ def sampler(
     topk=16,
     max_length=2048,
     num=16,
-    gc_interval=64,
+    gc_interval=48,
     depth=0,
 ):
     model.eval()
@@ -61,6 +61,7 @@ def sampler(
     )
 
     res = torch.zeros(problem_batch_size, 0, dtype=torch.long).to(device)
+    res_probs = torch.zeros(problem_batch_size, 0, dtype=torch.float32).to(device)
 
     for i in tqdm(range(max_length), desc="sampling progress"):
         with accelerator.autocast():
@@ -94,15 +95,20 @@ def sampler(
         if i % gc_interval == 0:
             cleanup()
 
-        values, indices = torch.topk(logits, topk, largest=True, sorted=False, dim=-1)
-        probs = nn.functional.softmax(values / temperature, dim=-1)
+        probs = nn.functional.softmax(logits / temperature, dim=-1)
+        probs_ = nn.functional.softmax(logits, dim=-1) # without temperature, for training
+        topk_probs, indices = torch.topk(probs, topk, largest=True, sorted=False, dim=-1)
+        probs_ = probs.gather(1, indices)
         # probs = probs.masked_fill(probs < min_p * 1 / topk, 0)
         selected_choice = torch.multinomial(
-            probs.view(problem_batch_size, -1), num_samples=1
+            topk_probs.view(problem_batch_size, -1), num_samples=1
         )
         selected_index = indices.gather(1, selected_choice)
+        selected_probs = probs_.gather(1, selected_choice)
         selected_index[(1 - text_end_mask).bool(), :] = eot
+        selected_probs[(1 - text_end_mask).bool(), :] = 1e6 # mask out
         res = torch.cat([res, selected_index], dim=1)
+        res_probs = torch.cat([res_probs, selected_probs], dim=1)
         selected_index = selected_index.view(problem_batch_size)
 
         if not gen_all_done and eot in selected_index:
@@ -139,6 +145,5 @@ def sampler(
             ).float()
 
     cleanup()
-    if depth > 0:
-        return res, hidden_cache, text_end_indices, attn_mask
-    return res, hidden_cache, text_end_indices, attn_mask
+    
+    return res, res_probs, hidden_cache, text_end_indices, attn_mask

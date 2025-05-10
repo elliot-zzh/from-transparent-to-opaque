@@ -29,7 +29,7 @@ torch.backends.cuda.enable_flash_sdp(True)
 
 # inject LoRA
 peft_config = LoraConfig(
-    init_lora_weights="pissa_niter_4",
+    init_lora_weights="pissa_niter_32",
     task_type="CAUSAL_LM",
     r=16,
     lora_alpha=32,
