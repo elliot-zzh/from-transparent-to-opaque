@@ -1,3 +1,4 @@
+import shutil
 import torch
 import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
@@ -5,14 +6,25 @@ from torch.optim import AdamW, Adam
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from config import model_name, accelerator
 from data import data_train
-from transformers import AutoTokenizer, AutoModelForCausalLM, DynamicCache
+from transformers import AutoModelForCausalLM
 from peft import get_peft_model, LoraConfig
-from accelerate import Accelerator
 from gates import Gate
-from parameters import gradient_accumulation_steps
 from tokenizer import tokenizer
 from vae import VAE
+from huggingface_hub import hf_hub_download
+import os
 
+if not os.path.exists("./data/vae/vae_epoch15.pth"):
+    os.makedirs("./data/vae")
+    downloaded_path = hf_hub_download(
+        repo_id="ethangoh7086cmd/gated-latent-reasoning-loop-vae",
+        filename="vae_epoch15.pth",
+        cache_dir="./data/vae",
+        force_download=False,
+    )
+    shutil.copy(downloaded_path, "./data/vae")
+    print("VAE model downloaded and saved to ./data/vae/vae_epoch15.pth")
+    os.remove(downloaded_path)
 
 torch.manual_seed(42)
 
@@ -45,7 +57,7 @@ gater = Gate(2048, 0.01)
 # load VAE
 vae = VAE(2048, 256, 2048 * 4)
 vae = torch.jit.script(vae)
-vae.load_state_dict(torch.load("/home/featurize/data/vae_epoch15.pth"))
+vae.load_state_dict(torch.load("./data/vae/vae_epoch15.pth"))
 
 optimizers = [
     AdamW(model.parameters(), lr=1e-5),

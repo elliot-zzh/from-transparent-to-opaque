@@ -1,4 +1,3 @@
-import torch
 from accelerate import Accelerator
 from parameters import gradient_accumulation_steps
 
