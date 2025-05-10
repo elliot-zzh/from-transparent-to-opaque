@@ -97,7 +97,7 @@ norm = torch.jit.script(norm)
 
 def train():
     step = 0
-    first_time = False
+    init_res = False
 
     while step <= total_steps:
         for input_ids, problem_attn_mask, ans in data_train:
@@ -106,17 +106,7 @@ def train():
             cleanup()
             with torch.no_grad():
                 for i in range(0, sample_problem_batch, sample_problem_sub_batch):
-                    if first_time:
-                        res, res_probs, hidden_cache, text_end_indices, mask = sampler(
-                            input_ids[: sample_problem_sub_batch * sample_num],
-                            problem_attn_mask[: sample_problem_sub_batch * sample_num],
-                            num=sample_num,
-                            topk=sample_topk,
-                            max_length=max_sample_length,
-                            depth=looping_depth,
-                        )
-                        first_time = False
-                    else:
+                    if init_res:
                         res_, res_probs_, hidden_cache_, text_end_indices_, mask_ = (
                             sampler(
                                 input_ids[
@@ -141,6 +131,17 @@ def train():
                             [text_end_indices, text_end_indices_], dim=0
                         )
                         mask = torch.cat([mask, mask_], dim=0)
+                    else:
+                        res, res_probs, hidden_cache, text_end_indices, mask = sampler(
+                            input_ids[: sample_problem_sub_batch * sample_num],
+                            problem_attn_mask[: sample_problem_sub_batch * sample_num],
+                            num=sample_num,
+                            topk=sample_topk,
+                            max_length=max_sample_length,
+                            depth=looping_depth,
+                        )
+                        init_res = True
+
                     cleanup()
 
                 hidden_cache = hidden_cache[:, :-1]  # truncate the end
@@ -154,24 +155,22 @@ def train():
                 ).to(device)
                 print(tokenizer.decode(res[0]))
                 len_rewards = text_end_indices.float() + 1
-                correct_count = (corr_filt := correctness_rewards == corr_reward).sum()
+                l = (corr_filt := correctness_rewards == corr_reward).sum()
 
-                if correct_count < 10:
+                if l < 10:
                     continue
 
-                first_time = True
+                init_res = False
 
                 filt = None
                 if (
-                    correct_count < res.shape[0] / 3 and correct_count != 0
+                    l < res.shape[0] / 3 and l != 0
                 ):  # clip too many wrong answers, currently 1:1
                     incorr_filt = torch.ones(sample_num * sample_problem_batch).to(
                         device
                     )
                     incorr_filt[correctness_rewards == 1] = 0
-                    incorr_filt = torch.multinomial(
-                        incorr_filt, num_samples=correct_count * 2
-                    )
+                    incorr_filt = torch.multinomial(incorr_filt, num_samples=l * 2)
                     filt = torch.cat(
                         [torch.nonzero(corr_filt, as_tuple=True)[0], incorr_filt], dim=0
                     )
@@ -184,7 +183,7 @@ def train():
                     res = res[filt]
                     text_end_indices = text_end_indices[filt]
 
-                correctness = correct_count.cpu().item()
+                correctness = l.cpu().item()
                 if correctness == 0:
                     print("NG. Re")
                     continue
