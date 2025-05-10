@@ -7,3 +7,6 @@ matplotlib==3.10.1
 polars==1.29.0
 pydantic==2.11.4
 accelerate~=1.6.0
+huggingface_hub~=0.31.1
+hf-xet~=1.1.0
+math_verify~=0.7.0

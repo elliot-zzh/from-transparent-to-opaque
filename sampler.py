@@ -96,8 +96,12 @@ def sampler(
             cleanup()
 
         probs = nn.functional.softmax(logits / temperature, dim=-1)
-        probs_ = nn.functional.softmax(logits, dim=-1) # without temperature, for training
-        topk_probs, indices = torch.topk(probs, topk, largest=True, sorted=False, dim=-1)
+        probs_ = nn.functional.softmax(
+            logits, dim=-1
+        )  # without temperature, for training
+        topk_probs, indices = torch.topk(
+            probs, topk, largest=True, sorted=False, dim=-1
+        )
         probs_ = probs.gather(1, indices)
         # probs = probs.masked_fill(probs < min_p * 1 / topk, 0)
         selected_choice = torch.multinomial(
@@ -106,16 +110,16 @@ def sampler(
         selected_index = indices.gather(1, selected_choice)
         selected_probs = probs_.gather(1, selected_choice)
         selected_index[(1 - text_end_mask).bool(), :] = eot
-        selected_probs[(1 - text_end_mask).bool(), :] = 1e6 # mask out
+        selected_probs[(1 - text_end_mask).bool(), :] = 1e6  # mask out
         res = torch.cat([res, selected_index], dim=1)
         res_probs = torch.cat([res_probs, selected_probs], dim=1)
         selected_index = selected_index.view(problem_batch_size)
 
         if not gen_all_done and eot in selected_index:
-            text_end_appeared = True
+            # text_end_appeared = True
             text_end_mask.masked_fill_(selected_index == im_end, 0)
             text_end_indices.masked_fill_(selected_index == im_end, i)
-            gen_all_done = not (1 in text_end_mask)
+            gen_all_done = 1 not in text_end_mask
             # if text_end_mask.sum() < problem_batch_size * 0.2 and text_end_indices.max() + 128 < i:
             #     gen_all_done = True
 
@@ -145,5 +149,5 @@ def sampler(
             ).float()
 
     cleanup()
-    
+
     return res, res_probs, hidden_cache, text_end_indices, attn_mask

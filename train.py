@@ -9,7 +9,6 @@ from model import (
     accelerator,
     vae,
     gater,
-    lossf,
     optimizers,
     gater_scheduler,
     tokenizer,
@@ -98,7 +97,7 @@ norm = torch.jit.script(norm)
 
 def train():
     step = 0
-    init_res = False
+    first_time = False
 
     while step <= total_steps:
         for input_ids, problem_attn_mask, ans in data_train:
@@ -107,30 +106,7 @@ def train():
             cleanup()
             with torch.no_grad():
                 for i in range(0, sample_problem_batch, sample_problem_sub_batch):
-                    if init_res:
-                        res_, res_probs_, hidden_cache_, text_end_indices_, mask_ = sampler(
-                            input_ids[
-                                i * sample_num : (i + sample_problem_sub_batch)
-                                * sample_num
-                            ],
-                            problem_attn_mask[
-                                i * sample_num : (i + sample_problem_sub_batch)
-                                * sample_num
-                            ],
-                            num=sample_num,
-                            topk=sample_topk,
-                            max_length=max_sample_length,
-                            temperature=sample_temperature,
-                            depth=looping_depth,
-                        )
-                        res = torch.cat([res, res_], dim=0)
-                        res_probs = torch.cat([res, res_probs_], dim=0)
-                        hidden_cache = torch.cat([hidden_cache, hidden_cache_], dim=0)
-                        text_end_indices = torch.cat(
-                            [text_end_indices, text_end_indices_], dim=0
-                        )
-                        mask = torch.cat([mask, mask_], dim=0)
-                    else:
+                    if first_time:
                         res, res_probs, hidden_cache, text_end_indices, mask = sampler(
                             input_ids[: sample_problem_sub_batch * sample_num],
                             problem_attn_mask[: sample_problem_sub_batch * sample_num],
@@ -139,11 +115,35 @@ def train():
                             max_length=max_sample_length,
                             depth=looping_depth,
                         )
-                        init_res = True
-
+                        first_time = False
+                    else:
+                        res_, res_probs_, hidden_cache_, text_end_indices_, mask_ = (
+                            sampler(
+                                input_ids[
+                                    i * sample_num : (i + sample_problem_sub_batch)
+                                    * sample_num
+                                ],
+                                problem_attn_mask[
+                                    i * sample_num : (i + sample_problem_sub_batch)
+                                    * sample_num
+                                ],
+                                num=sample_num,
+                                topk=sample_topk,
+                                max_length=max_sample_length,
+                                temperature=sample_temperature,
+                                depth=looping_depth,
+                            )
+                        )
+                        res = torch.cat([res, res_], dim=0)
+                        res_probs = torch.cat([res, res_probs_], dim=0)
+                        hidden_cache = torch.cat([hidden_cache, hidden_cache_], dim=0)
+                        text_end_indices = torch.cat(
+                            [text_end_indices, text_end_indices_], dim=0
+                        )
+                        mask = torch.cat([mask, mask_], dim=0)
                     cleanup()
 
-                hidden_cache = hidden_cache[:, :-1] # truncate the end
+                hidden_cache = hidden_cache[:, :-1]  # truncate the end
 
                 correctness_rewards = torch.Tensor(
                     verifier(
@@ -154,22 +154,24 @@ def train():
                 ).to(device)
                 print(tokenizer.decode(res[0]))
                 len_rewards = text_end_indices.float() + 1
-                l = (corr_filt := correctness_rewards == corr_reward).sum()
-                
-                if l < 10:
+                correct_count = (corr_filt := correctness_rewards == corr_reward).sum()
+
+                if correct_count < 10:
                     continue
-                    
-                init_res = False
+
+                first_time = True
 
                 filt = None
-                if l < res.shape[
-                    0
-                ] / 3 and l != 0:  # clip too many wrong answers, currently 1:1
+                if (
+                    correct_count < res.shape[0] / 3 and correct_count != 0
+                ):  # clip too many wrong answers, currently 1:1
                     incorr_filt = torch.ones(sample_num * sample_problem_batch).to(
                         device
                     )
                     incorr_filt[correctness_rewards == 1] = 0
-                    incorr_filt = torch.multinomial(incorr_filt, num_samples=l * 2)
+                    incorr_filt = torch.multinomial(
+                        incorr_filt, num_samples=correct_count * 2
+                    )
                     filt = torch.cat(
                         [torch.nonzero(corr_filt, as_tuple=True)[0], incorr_filt], dim=0
                     )
@@ -182,7 +184,7 @@ def train():
                     res = res[filt]
                     text_end_indices = text_end_indices[filt]
 
-                correctness = l.cpu().item()
+                correctness = correct_count.cpu().item()
                 if correctness == 0:
                     print("NG. Re")
                     continue
@@ -286,23 +288,27 @@ def train():
                                 model.model.model.norm(final_hidden)
                             ).float()
 
-                            '''
+                            """
                             loss = lossf(
                                 logits[:, input_ids.shape[1] - 1 :].transpose(1, 2),
                                 seqs[i:end, input_ids.shape[1] :].masked_fill(
                                     mask[i:end, input_ids.shape[1] :] == 0, -100
                                 ),
                             )
-                            '''
+                            """
 
                             # compute loss
-                            target = seqs[i:end, input_ids.shape[1]:]
+                            target = seqs[i:end, input_ids.shape[1] :]
                             target[target >= logits.shape[-1]] = 0
-                            new_probs = F.softmax(logits[:, input_ids.shape[1] - 1:], dim=-1).gather(-1, target.unsqueeze(-1)).squeeze(-1)
+                            new_probs = (
+                                F.softmax(logits[:, input_ids.shape[1] - 1 :], dim=-1)
+                                .gather(-1, target.unsqueeze(-1))
+                                .squeeze(-1)
+                            )
                             loss = new_probs / res_probs[i:end]
                             loss[loss > clip_high + 1] = 1 + clip_high
                             loss[loss < 1 - clip_low] = 1 - clip_low
-                            
+
                             # compute loss
                             new_compressed_hidden = vae(
                                 hidden[:, input_ids.shape[1] - 1 : -1], compressing=True
@@ -337,7 +343,7 @@ def train():
                             )
                             # apply hidden regularization bonus
                             hidden_loss = hidden_loss * linear_interpl(
-                                (text_end_indices + 1)[i : end],
+                                (text_end_indices + 1)[i:end],
                                 hidden_reg_len_bonus_a,
                                 max_sample_length,
                                 1,
