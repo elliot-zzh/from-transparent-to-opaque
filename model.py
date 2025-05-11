@@ -65,7 +65,6 @@ gater = Gate(2048, 0.01)
 
 # load VAE
 vae = VAE(2048, 256, 2048 * 4)
-vae = torch.jit.script(vae)
 vae.load_state_dict(torch.load("./data/vae/vae_epoch15.pth"))
 
 optimizers = [

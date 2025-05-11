@@ -49,6 +49,10 @@ from forward import model_forward
 from sampler import sampler
 from utils import cleanup
 
+torch._dynamo.config.automatic_dynamic_shapes = True
+torch._dynamo.config.capture_scalar_outputs = False
+torch._dynamo.config.suppress_errors = True
+
 
 def save_model(steps):
     accelerator.wait_for_everyone()
@@ -224,65 +228,64 @@ def train():
                     range(0, res.shape[0], batch_size),
                     desc=f"training epoch: {epoch + 1}",
                 ):
-                    if True:
-                        if step % train_gc_interval == 0:
-                            cleanup()
-                        end = (
-                            (i + batch_size)
-                            if i + batch_size <= res.shape[0]
-                            else res.shape[0]
+                    if step % train_gc_interval == 0:
+                        cleanup()
+                    end = (
+                        (i + batch_size)
+                        if i + batch_size <= res.shape[0]
+                        else res.shape[0]
+                    )
+                    embeds = model.lm_head.weight[seqs[i:end]][:, :-1].to("cuda:0")
+                    hidden_cache_slice = hidden_cache[i:end]
+                    with accelerator.autocast():
+                        last_hidden = vae.uncompress(
+                            F.dropout(
+                                hidden_cache_slice,
+                                p=hidden_dropout_rate,
+                                training=True,
+                            )
                         )
-                        embeds = model.lm_head.weight[seqs[i:end]][:, :-1].to("cuda:0")
-                        hidden_cache_slice = hidden_cache[i:end]
-                        with accelerator.autocast():
-                            last_hidden = vae.uncompress(
-                                F.dropout(
-                                    hidden_cache_slice,
-                                    p=hidden_dropout_rate,
-                                    training=True,
-                                )
+                        if looping_depth > 0:  # deep looping
+                            hidden_pos = torch.arange(
+                                0,
+                                last_hidden.shape[1],
+                                dtype=torch.long,
+                                device=device,
                             )
-                            if looping_depth > 0:  # deep looping
-                                hidden_pos = torch.arange(
-                                    0,
-                                    last_hidden.shape[1],
-                                    dtype=torch.long,
-                                    device=device,
-                                )
-                                for depth_i in range(looping_depth):
-                                    for layer_i in range(
-                                        depth_start_layer_num, hidden_layer_num
-                                    ):
-                                        last_hidden = model_forward(
-                                            hidden_state=last_hidden,
-                                            attn_mask=mask[
-                                                i:end, input_ids.shape[1] - 1 : -1
-                                            ],
-                                            pos=hidden_pos,
-                                            start_layer=depth_start_layer_num,
-                                            end_layer=hidden_layer_num,
-                                        )
+                            for depth_i in range(looping_depth):
+                                for layer_i in range(
+                                    depth_start_layer_num, hidden_layer_num
+                                ):
+                                    last_hidden = model_forward(
+                                        hidden_state=last_hidden,
+                                        attn_mask=mask[
+                                            i:end, input_ids.shape[1] - 1 : -1
+                                        ],
+                                        pos=hidden_pos,
+                                        start_layer=depth_start_layer_num,
+                                        end_layer=hidden_layer_num,
+                                    )
 
-                            embeds = torch.cat(
-                                [
-                                    embeds[:, : input_ids.shape[1]],
-                                    gater(last_hidden, embeds[:, input_ids.shape[1] :]),
-                                ],
-                                dim=1,
-                            )
-                            final_hidden, hidden = model_forward(
-                                hidden_state=embeds,
-                                attn_mask=mask[i:end, :-1],
-                                pos=torch.arange(
-                                    seqs.shape[1] - 1, dtype=torch.long, device=device
-                                ),
-                                extract_specific=hidden_layer_num,
-                            )
-                            logits = model.lm_head(
-                                model.model.model.norm(final_hidden)
-                            ).float()
+                        embeds = torch.cat(
+                            [
+                                embeds[:, : input_ids.shape[1]],
+                                gater(last_hidden, embeds[:, input_ids.shape[1] :]),
+                            ],
+                            dim=1,
+                        )
+                        final_hidden, hidden = model_forward(
+                            hidden_state=embeds,
+                            attn_mask=mask[i:end, :-1],
+                            pos=torch.arange(
+                                seqs.shape[1] - 1, dtype=torch.long, device=device
+                            ),
+                            extract_specific=hidden_layer_num,
+                        )
+                        logits = model.lm_head(
+                            model.model.model.norm(final_hidden)
+                        ).float()
 
-                            """
+                        """
                             loss = lossf(
                                 logits[:, input_ids.shape[1] - 1 :].transpose(1, 2),
                                 seqs[i:end, input_ids.shape[1] :].masked_fill(
@@ -291,92 +294,90 @@ def train():
                             )
                             """
 
-                            # compute loss
-                            target = res[i:end, 1:]
-                            target[target >= logits.shape[-1]] = 0
-                            new_probs = (
-                                F.softmax(logits[:, input_ids.shape[1] - 1 :], dim=-1)
-                                .gather(-1, target.unsqueeze(-1))
-                                .squeeze(-1)
-                            )
-                            clipped = loss = new_probs / res_probs[i:end, 1:]
-                            clipped[clipped >= clip_high + 1] = 1 + clip_high
-                            clipped[clipped <= 1 - clip_low] = 1 - clip_low
-                            clipped *= rewards[i:end].unsqueeze(-1)
-                            loss = torch.min(
-                                loss * rewards[i:end].unsqueeze(-1), clipped
-                            )
-                            loss *= mask[i:end, input_ids.shape[1] + 1 :]
+                        # compute loss
+                        target = res[i:end, 1:]
+                        target[target >= logits.shape[-1]] = 0
+                        new_probs = (
+                            F.softmax(logits[:, input_ids.shape[1] - 1 :], dim=-1)
+                            .gather(-1, target.unsqueeze(-1))
+                            .squeeze(-1)
+                        )
+                        clipped = loss = new_probs / res_probs[i:end, 1:]
+                        clipped[clipped >= clip_high + 1] = 1 + clip_high
+                        clipped[clipped <= 1 - clip_low] = 1 - clip_low
+                        clipped *= rewards[i:end].unsqueeze(-1)
+                        loss = torch.min(loss * rewards[i:end].unsqueeze(-1), clipped)
+                        loss *= mask[i:end, input_ids.shape[1] + 1 :]
 
-                            # compute loss
-                            new_compressed_hidden = vae(
-                                hidden[:, input_ids.shape[1] - 1 : -1], compressing=True
-                            )
-                            new_processed_hidden = vae.uncompress(new_compressed_hidden)
-                            if looping_depth > 0:  # deep looping
-                                for depth_i in range(looping_depth):
-                                    for layer_i in range(
-                                        depth_start_layer_num, hidden_layer_num
-                                    ):
-                                        last_hidden = model_forward(
-                                            hidden_state=new_processed_hidden,
-                                            attn_mask=mask[
-                                                i:end, input_ids.shape[1] - 1 : -1
-                                            ],
-                                            pos=hidden_pos,
-                                            start_layer=depth_start_layer_num,
-                                            end_layer=hidden_layer_num,
-                                        )
+                        # compute loss
+                        new_compressed_hidden = vae(
+                            hidden[:, input_ids.shape[1] - 1 : -1], compressing=True
+                        )
+                        new_processed_hidden = vae.uncompress(new_compressed_hidden)
+                        if looping_depth > 0:  # deep looping
+                            for depth_i in range(looping_depth):
+                                for layer_i in range(
+                                    depth_start_layer_num, hidden_layer_num
+                                ):
+                                    last_hidden = model_forward(
+                                        hidden_state=new_processed_hidden,
+                                        attn_mask=mask[
+                                            i:end, input_ids.shape[1] - 1 : -1
+                                        ],
+                                        pos=hidden_pos,
+                                        start_layer=depth_start_layer_num,
+                                        end_layer=hidden_layer_num,
+                                    )
 
-                            new_processed_hidden, gate = gater.forward_hidden(
-                                new_processed_hidden, embeds[:, input_ids.shape[1] :]
-                            )
-                            processed_hidden, _ = gater.forward_hidden(
-                                last_hidden, embeds[:, input_ids.shape[1] :]
-                            )
-                            hidden_loss = (
-                                hidden_regularizer(
-                                    new_processed_hidden, processed_hidden
-                                ).mean(dim=-1)
-                                * mask[i:end, input_ids.shape[1] : -1]
-                            )
-                            # apply hidden regularization bonus
-                            hidden_loss = hidden_loss * linear_interpl(
-                                (text_end_indices + 1)[i:end],
-                                hidden_reg_len_bonus_a,
-                                max_sample_length,
-                                1,
-                                hidden_reg_len_bonus_high,
-                            )
-                            # apply gating value bonus
-                            gate_bonus = torch.exp(
-                                gating_value_lambda * (0.5 - gate) ** 2
-                            ).mean()
-                            loss = (
-                                (loss.sum(dim=-1))
-                                / (text_end_indices[i:end] + 1).sum()
-                                * (-1)
-                            )
-                            loss += hidden_loss.mean() * hidden_regularization_rate
-                            loss += (
-                                gate_bonus
-                                * gating_value_bonus
-                                * gating_value_decay
-                                ** (step // gating_bonus_update_step)
-                            )
-                            loss *= (end - i) / res.shape[0]
+                        new_processed_hidden, gate = gater.forward_hidden(
+                            new_processed_hidden, embeds[:, input_ids.shape[1] :]
+                        )
+                        processed_hidden, _ = gater.forward_hidden(
+                            last_hidden, embeds[:, input_ids.shape[1] :]
+                        )
+                        hidden_loss = (
+                            hidden_regularizer(
+                                new_processed_hidden, processed_hidden
+                            ).mean(dim=-1)
+                            * mask[i:end, input_ids.shape[1] : -1]
+                        )
+                        # apply hidden regularization bonus
+                        hidden_loss = hidden_loss * linear_interpl(
+                            (text_end_indices + 1)[i:end],
+                            hidden_reg_len_bonus_a,
+                            max_sample_length,
+                            1,
+                            hidden_reg_len_bonus_high,
+                        )
+                        # apply gating value bonus
+                        gate_bonus = torch.exp(
+                            gating_value_lambda * (0.5 - gate) ** 2
+                        ).mean()
+                        loss = (
+                            (loss.sum(dim=-1))
+                            / (text_end_indices[i:end] + 1).sum()
+                            * (-1)
+                        )
+                        loss += hidden_loss.mean() * hidden_regularization_rate
+                        loss += (
+                            gate_bonus
+                            * gating_value_bonus
+                            * gating_value_decay ** (step // gating_bonus_update_step)
+                        )
+                        loss *= (end - i) / res.shape[0]
 
-                            # randomly update hidden cache
-                            with torch.no_grad():
-                                update_index = torch.nonzero(
-                                    torch.randn(hidden_cache.shape[1], device=device)
-                                    < hidden_updating_rate
-                                )
-                                hidden_cache[i:end][:, update_index] = (
-                                    new_compressed_hidden[:, update_index]
-                                )
+                        # randomly update hidden cache
+                        with torch.no_grad():
+                            update_index = torch.nonzero(
+                                torch.randn(hidden_cache.shape[1], device=device)
+                                < hidden_updating_rate
+                            )
+                            hidden_cache[i:end][:, update_index] = (
+                                new_compressed_hidden[:, update_index]
+                            )
 
-                        accelerator.backward(loss)
+                    accelerator.backward(loss)
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
 
                 step_optimizer()
                 zero_grad_optimizer()
