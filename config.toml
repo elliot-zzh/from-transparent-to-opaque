@@ -18,7 +18,7 @@ sample_problem_sub_batch = 1
 acc_check_only = false
 train_gc_interval = 12
 corr_reward = 2
-gradient_accumulation_steps = 24
+gradient_accumulation_steps = 32
 step = 1
 clip_high = 0.3
 clip_low = 0.2
@@ -36,7 +36,7 @@ hidden_reg_len_bonus_high = 10
 hidden_updating_rate = 0.05
 
 [gating_value]
-gating_value_bonus = 0.1
+gating_value_bonus = 0.2
 gating_value_decay = 0.95
 gating_value_lambda = 5
 gating_bonus_update_step = 100
