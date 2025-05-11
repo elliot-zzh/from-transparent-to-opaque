@@ -17,13 +17,30 @@ parser.add_argument(
     default="config.toml",
     help="Path to the TOML configuration file",
 )
+# also for passing the path of dataset files
+parser.add_argument(
+    "--traindataset",
+    type=str,
+    default="/home/featurize/data/train.jsonl",
+    help="Path to the path of train dataset files",
+)
+parser.add_argument(
+    "--testdataset",
+    type=str,
+    default="/home/featurize/data/test.jsonl",
+    help="Path to the path of test dataset files",
+)
+
 args = parser.parse_args()
 
 # Load hyperparameters from TOML file
 with open(args.config, file_mode) as f:
     config = toml.load(f)
 
-experiment_id = config['general']['id']
+experiment_id = config["general"]["id"]
+attention_implementation = config["model"]["attention_implementation"]
+train_dataset_path = args.traindataset
+test_dataset_path = args.testdataset
 
 # hyperparameters
 num_epochs = config["training"]["num_epochs"]
@@ -67,7 +84,7 @@ depth_start_layer_num = config["model"]["depth_start_layer_num"]
 clip_high = config["training"]["clip_high"]
 clip_low = config["training"]["clip_low"]
 lr = config["training"]["lr"]
-vae_lr = config['training']['vae_lr']
-gater_lr = config['training']['gater_lr']
-gater_lr_min = config['training']['gater_lr_min']
-gater_lr_decay_interval = config['training']['gater_lr_decay_interval']
+vae_lr = config["training"]["vae_lr"]
+gater_lr = config["training"]["gater_lr"]
+gater_lr_min = config["training"]["gater_lr_min"]
+gater_lr_decay_interval = config["training"]["gater_lr_decay_interval"]

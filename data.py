@@ -5,9 +5,13 @@ from math_verify import parse, verify
 from tokenizer import prompt, prompt_suffix
 from parameters import sample_problem_batch, sample_num
 from utils import tokenize
+from parameters import (
+    train_dataset_path,
+    test_dataset_path,
+)
 
-data_train = pd.read_json("/home/featurize/data/train.jsonl", lines=True)
-data_test = pd.read_json("/home/featurize/data/test.jsonl", lines=True)
+data_train = pd.read_json(train_dataset_path, lines=True)
+data_test = pd.read_json(test_dataset_path, lines=True)
 
 
 class dataset(Dataset):

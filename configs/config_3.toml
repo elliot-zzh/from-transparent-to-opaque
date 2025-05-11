@@ -1,5 +1,6 @@
 [general]
 id = 3
+attention_implementation = flash_attention_2
 
 [training]
 num_epochs = 2

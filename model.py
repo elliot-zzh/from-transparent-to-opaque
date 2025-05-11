@@ -20,6 +20,7 @@ from parameters import (
     gater_lr_min,
     gater_lr_decay_interval,
     experiment_id,
+    attention_implementation,
 )
 
 if not os.path.exists("./data/vae/vae_epoch15.pth"):
@@ -43,7 +44,7 @@ model = AutoModelForCausalLM.from_pretrained(
     model_name,
     device_map="auto",
     torch_dtype=torch.bfloat16,
-    attn_implementation="sdpa",
+    attn_implementation=attention_implementation,
 )
 torch.backends.cuda.enable_flash_sdp(True)
 
@@ -72,7 +73,9 @@ optimizers = [
     AdamW(vae.parameters(), lr=vae_lr),
     Adam(gater.parameters(), lr=gater_lr),
 ]
-gater_scheduler = CosineAnnealingLR(optimizers[2], T_max=gater_lr_decay_interval, eta_min=gater_lr_min)
+gater_scheduler = CosineAnnealingLR(
+    optimizers[2], T_max=gater_lr_decay_interval, eta_min=gater_lr_min
+)
 (model, vae, gater, optimizers[0], optimizers[1], optimizers[2], data_train) = (
     accelerator.prepare(
         model, vae, gater, optimizers[0], optimizers[1], optimizers[2], data_train

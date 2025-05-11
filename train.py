@@ -306,7 +306,7 @@ def train():
                             loss = torch.min(
                                 loss * rewards[i:end].unsqueeze(-1), clipped
                             )
-                            loss *= mask[i:end, input_ids.shape[1] + 1:]
+                            loss *= mask[i:end, input_ids.shape[1] + 1 :]
 
                             # compute loss
                             new_compressed_hidden = vae(
@@ -354,7 +354,7 @@ def train():
                             ).mean()
                             loss = (
                                 (loss.sum(dim=-1))
-                                / (text_end_indices[i : end] + 1).sum()
+                                / (text_end_indices[i:end] + 1).sum()
                                 * (-1)
                             )
                             loss += hidden_loss.mean() * hidden_regularization_rate
