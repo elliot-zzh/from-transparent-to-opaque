@@ -46,7 +46,7 @@ def sampler(
             kv_cache=kv_cache,
             extract_specific=hidden_layer_num,
         )
-        logits = model.lm_head(model.model.model.norm(final_hidden[:, -1, :])).float()
+        logits = model.lm_head(model.model.model.norm(final_hidden[:, -1, :]))
 
     hidden_cache = torch.Tensor(problem_batch_size, 0, 256).to(device)
 
@@ -84,7 +84,7 @@ def sampler(
                 for depth_i in range(depth):
                     last_hidden = model_forward(
                         hidden_state=last_hidden,
-                        attn_mask=attn_mask[:, input_ids.shape[1] + i - 1].unsqueeze(1),
+                        attn_mask=attn_mask[:, input_ids.shape[1] + i - 1 :],
                         pos=cache_pos[-1:] - input_ids.shape[1] + 1,
                         kv_cache=deep_kv_cache[depth_i],
                         start_layer=depth_start_layer_num,
@@ -102,7 +102,7 @@ def sampler(
         topk_probs, indices = torch.topk(
             probs, topk, largest=True, sorted=False, dim=-1
         )
-        probs_ = probs.gather(1, indices)
+        probs_ = probs_.gather(1, indices)
         # probs = probs.masked_fill(probs < min_p * 1 / topk, 0)
         selected_choice = torch.multinomial(
             topk_probs.view(problem_batch_size, -1), num_samples=1
@@ -131,8 +131,8 @@ def sampler(
             break
 
         # forward
+        cache_pos = cache_pos[-1:] + 1
         with accelerator.autocast():
-            cache_pos = cache_pos[-1:] + 1
             embeds = model.model.model.embed_tokens(
                 selected_index.view(problem_batch_size, 1)
             )
@@ -144,9 +144,7 @@ def sampler(
                 kv_cache=kv_cache,
                 extract_specific=hidden_layer_num,
             )
-            logits = model.lm_head(
-                model.model.model.norm(final_hidden[:, -1, :])
-            ).float()
+            logits = model.lm_head(model.model.model.norm(final_hidden[:, -1, :]))
 
     cleanup()
 

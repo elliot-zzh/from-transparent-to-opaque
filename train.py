@@ -2,7 +2,6 @@ import torch
 from tqdm import tqdm
 import torch.nn.functional as F
 from config import device
-from data import data_train, verifier
 from model import (
     model,
     writer,
@@ -14,6 +13,7 @@ from model import (
     tokenizer,
     hidden_regularizer,
 )
+from data import data_train, verifier
 from parameters import (
     max_train_length,
     acc_check_only,
@@ -144,8 +144,6 @@ def train():
 
                     cleanup()
 
-                hidden_cache = hidden_cache[:, :-1]  # truncate the end
-
                 correctness_rewards = torch.Tensor(
                     verifier(
                         tokenizer.batch_decode(res, skip_special_tokens=True),
@@ -153,27 +151,29 @@ def train():
                         corr_score=corr_reward,
                     )
                 ).to(device)
-                print(tokenizer.decode(res[0]))
+                print(tokenizer.decode(res[0], skip_special_tokens=True))
                 len_rewards = text_end_indices.float() + 1
                 l = (corr_filt := correctness_rewards == corr_reward).sum()
+                print(l)
 
-                if l < 10:
-                    continue
+                # if l < 10:
+                #     continue
+
+                hidden_cache = hidden_cache[:, :-1]  # truncate the end
 
                 init_res = False
 
-                filt = None
+                correctness_rate = l.cpu().item() / res.shape[0]
                 if (
                     l < res.shape[0] / 3 and l != 0
-                ):  # clip too many wrong answers, currently 1:1
-                    incorr_filt = torch.ones(sample_num * sample_problem_batch).to(
-                        device
-                    )
-                    incorr_filt[correctness_rewards == 1] = 0
+                ):  # clip too many wrong answers, currently 1:2
+                    incorr_filt = torch.ones_like(correctness_rewards).to(device)
+                    incorr_filt[correctness_rewards == corr_reward] = 0
                     incorr_filt = torch.multinomial(incorr_filt, num_samples=l * 2)
                     filt = torch.cat(
                         [torch.nonzero(corr_filt, as_tuple=True)[0], incorr_filt], dim=0
                     )
+                    print(filt, res.shape)
                     filt = filt[torch.randperm(filt.size(0))]
                     correctness_rewards = correctness_rewards[filt]
                     len_rewards = len_rewards[filt]
@@ -183,12 +183,8 @@ def train():
                     res = res[filt]
                     text_end_indices = text_end_indices[filt]
 
-                correctness = l.cpu().item()
-                if correctness == 0:
-                    print("NG. Re")
-                    continue
-                print("correctness: ", correctness)
-                writer.add_scalar("correctness/train", correctness, step)
+                print("correctness rate: ", correctness_rate)
+                writer.add_scalar("correctness_rate/train", correctness_rate, step)
 
                 # reward normalization to get advantage
                 max_len_mask = len_rewards >= max_sample_length
@@ -223,7 +219,6 @@ def train():
             vae.train()
             gater.train()
             for epoch in range(num_epochs):
-                print("training epoch: ", epoch + 1)
                 cleanup()
                 for i in tqdm(
                     range(0, res.shape[0], batch_size),
@@ -297,16 +292,21 @@ def train():
                             """
 
                             # compute loss
-                            target = seqs[i:end, input_ids.shape[1] :]
+                            target = res[i:end, 1:]
                             target[target >= logits.shape[-1]] = 0
                             new_probs = (
                                 F.softmax(logits[:, input_ids.shape[1] - 1 :], dim=-1)
                                 .gather(-1, target.unsqueeze(-1))
                                 .squeeze(-1)
                             )
-                            loss = new_probs / res_probs[i:end]
-                            loss[loss > clip_high + 1] = 1 + clip_high
-                            loss[loss < 1 - clip_low] = 1 - clip_low
+                            clipped = loss = new_probs / res_probs[i:end, 1:]
+                            clipped[clipped >= clip_high + 1] = 1 + clip_high
+                            clipped[clipped <= 1 - clip_low] = 1 - clip_low
+                            clipped *= rewards[i:end].unsqueeze(-1)
+                            loss = torch.min(
+                                loss * rewards[i:end].unsqueeze(-1), clipped
+                            )
+                            loss *= mask[i:end, input_ids.shape[1] + 1:]
 
                             # compute loss
                             new_compressed_hidden = vae(
@@ -328,10 +328,10 @@ def train():
                                             end_layer=hidden_layer_num,
                                         )
 
-                            new_processed_hidden = gater.forward_hidden(
+                            new_processed_hidden, gate = gater.forward_hidden(
                                 new_processed_hidden, embeds[:, input_ids.shape[1] :]
                             )
-                            processed_hidden = gater.forward_hidden(
+                            processed_hidden, _ = gater.forward_hidden(
                                 last_hidden, embeds[:, input_ids.shape[1] :]
                             )
                             hidden_loss = (
@@ -350,19 +350,21 @@ def train():
                             )
                             # apply gating value bonus
                             gate_bonus = torch.exp(
-                                gating_value_lambda * (0.5 - gater.gate) ** 2
+                                gating_value_lambda * (0.5 - gate) ** 2
                             ).mean()
                             loss = (
-                                (loss.sum(dim=-1) * rewards[i:end]).sum()
-                                + hidden_loss.sum() * hidden_regularization_rate
-                            ) / (text_end_indices[i : i + batch_size] + 1).sum()
+                                (loss.sum(dim=-1))
+                                / (text_end_indices[i : end] + 1).sum()
+                                * (-1)
+                            )
+                            loss += hidden_loss.mean() * hidden_regularization_rate
                             loss += (
                                 gate_bonus
                                 * gating_value_bonus
                                 * gating_value_decay
                                 ** (step // gating_bonus_update_step)
                             )
-                            loss *= batch_size / res.shape[0]
+                            loss *= (end - i) / res.shape[0]
 
                             # randomly update hidden cache
                             with torch.no_grad():
@@ -380,7 +382,7 @@ def train():
                 zero_grad_optimizer()
 
                 print(f"Step {step}, Loss: {loss.item():.3f}")
-                gater.print_gates()
+                print("gating values: ", gate[:1, :10])
 
                 step += 1
 

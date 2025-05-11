@@ -1,5 +1,5 @@
 [general]
-id = -1
+id = 2
 
 [training]
 num_epochs = 2
@@ -29,7 +29,7 @@ gater_lr_min = 5e-5
 gater_lr_decay_interval = 1000
 
 [hidden_regularization]
-hidden_regularization_rate = 0.6
+hidden_regularization_rate = 0
 hidden_dropout_rate = 0.02
 hidden_reg_len_bonus_a = 20
 hidden_reg_len_bonus_high = 10

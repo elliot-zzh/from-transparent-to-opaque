@@ -23,6 +23,8 @@ args = parser.parse_args()
 with open(args.config, file_mode) as f:
     config = toml.load(f)
 
+experiment_id = config['general']['id']
+
 # hyperparameters
 num_epochs = config["training"]["num_epochs"]
 total_steps = config["training"]["total_steps"]
@@ -64,3 +66,8 @@ hidden_layer_num = config["model"]["hidden_layer_num"]
 depth_start_layer_num = config["model"]["depth_start_layer_num"]
 clip_high = config["training"]["clip_high"]
 clip_low = config["training"]["clip_low"]
+lr = config["training"]["lr"]
+vae_lr = config['training']['vae_lr']
+gater_lr = config['training']['gater_lr']
+gater_lr_min = config['training']['gater_lr_min']
+gater_lr_decay_interval = config['training']['gater_lr_decay_interval']

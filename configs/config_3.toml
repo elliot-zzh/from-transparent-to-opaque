@@ -1,5 +1,5 @@
 [general]
-id = -1
+id = 3
 
 [training]
 num_epochs = 2
@@ -36,7 +36,7 @@ hidden_reg_len_bonus_high = 10
 hidden_updating_rate = 0.05
 
 [gating_value]
-gating_value_bonus = 0.2
+gating_value_bonus = 0
 gating_value_decay = 0.95
 gating_value_lambda = 5
 gating_bonus_update_step = 100

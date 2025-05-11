@@ -13,6 +13,14 @@ from tokenizer import tokenizer
 from vae import VAE
 from huggingface_hub import hf_hub_download
 import os
+from parameters import (
+    lr,
+    vae_lr,
+    gater_lr,
+    gater_lr_min,
+    gater_lr_decay_interval,
+    experiment_id,
+)
 
 if not os.path.exists("./data/vae/vae_epoch15.pth"):
     os.makedirs("./data/vae")
@@ -28,7 +36,7 @@ if not os.path.exists("./data/vae/vae_epoch15.pth"):
 
 torch.manual_seed(42)
 
-writer = SummaryWriter("runs/demo")
+writer = SummaryWriter(f"runs/experiment-{experiment_id}")
 
 # load the model
 model = AutoModelForCausalLM.from_pretrained(
@@ -60,11 +68,11 @@ vae = torch.jit.script(vae)
 vae.load_state_dict(torch.load("./data/vae/vae_epoch15.pth"))
 
 optimizers = [
-    AdamW(model.parameters(), lr=1e-5),
-    AdamW(vae.parameters(), lr=5e-5),
-    Adam(gater.parameters(), lr=3e-3),
+    AdamW(model.parameters(), lr=lr),
+    AdamW(vae.parameters(), lr=vae_lr),
+    Adam(gater.parameters(), lr=gater_lr),
 ]
-gater_scheduler = CosineAnnealingLR(optimizers[2], T_max=500, eta_min=1e-3)
+gater_scheduler = CosineAnnealingLR(optimizers[2], T_max=gater_lr_decay_interval, eta_min=gater_lr_min)
 (model, vae, gater, optimizers[0], optimizers[1], optimizers[2], data_train) = (
     accelerator.prepare(
         model, vae, gater, optimizers[0], optimizers[1], optimizers[2], data_train

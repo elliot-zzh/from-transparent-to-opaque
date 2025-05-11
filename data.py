@@ -37,7 +37,7 @@ class dataset(Dataset):
 data_train = DataLoader(
     dataset(data_train), batch_size=sample_problem_batch * sample_num, shuffle=True
 )
-data_test = DataLoader(dataset(data_test), batch_size=sample_problem_batch * sample_num)
+# data_test = DataLoader(dataset(data_test), batch_size=sample_problem_batch * sample_num)
 
 
 boxed_match = re.compile(r"\\boxed\{[^}]*\}")
