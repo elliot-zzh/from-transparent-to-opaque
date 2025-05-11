@@ -1,6 +1,6 @@
 [general]
 id = -1
-attention_implementation = "flash_attention_3"
+attention_implementation = "sdpa"
 
 [training]
 num_epochs = 2
@@ -9,13 +9,13 @@ log_interval = 1
 save_interval = 256
 batch_size = 1
 max_train_length = 1024
-max_sample_length = 768
+max_sample_length = 640
 l_cache_length = 600
-sample_num = 24
+sample_num = 12
 sample_topk = 12
 sample_temperature = 0.6
-sample_problem_batch = 1
-sample_problem_sub_batch = 1
+sample_problem_batch = 2
+sample_problem_sub_batch = 2
 acc_check_only = false
 train_gc_interval = 12
 corr_reward = 2
@@ -23,26 +23,27 @@ gradient_accumulation_steps = 32
 step = 1
 clip_high = 0.3
 clip_low = 0.2
-lr = 1e-6
+lr = 4e-7
 vae_lr = 5e-6
-gater_lr = 1e-4
-gater_lr_min = 5e-5
+gater_lr = 3e-6
+gater_lr_min = 4e-7
 gater_lr_decay_interval = 1000
 
 [hidden_regularization]
-hidden_regularization_rate = 0.6
+hidden_regularization_rate = 0.2
 hidden_dropout_rate = 0.02
 hidden_reg_len_bonus_a = 20
 hidden_reg_len_bonus_high = 10
 hidden_updating_rate = 0.05
 
 [gating_value]
-gating_value_bonus = 0.2
+gating_value_bonus = 0.5
 gating_value_decay = 0.95
-gating_value_lambda = 5
+gating_value_lambda = 4
 gating_bonus_update_step = 100
 
 [model]
 looping_depth = 0
 hidden_layer_num = 20
 depth_start_layer_num = 10
+attention_implementation = "spda"

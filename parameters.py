@@ -38,7 +38,7 @@ with open(args.config, file_mode) as f:
     config = toml.load(f)
 
 experiment_id = config["general"]["id"]
-attention_implementation = config["model"]["attention_implementation"]
+attention_implementation = config["general"]["attention_implementation"]
 train_dataset_path = args.traindataset
 test_dataset_path = args.testdataset
 

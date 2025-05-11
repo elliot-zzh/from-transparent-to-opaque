@@ -55,9 +55,7 @@ torch._dynamo.config.suppress_errors = True
 
 
 def save_model(steps):
-    accelerator.wait_for_everyone()
-    unwrapped_model = accelerator.unwrap_model(model)
-    unwrapped_model.save_pretrained(
+    model.save_pretrained(
         f"./model/model-{steps}",
         is_main_process=accelerator.is_main_process,
         save_function=accelerator.save,
@@ -80,7 +78,7 @@ def zero_grad_optimizer():
 
 def linear_interpl(
     x: torch.Tensor, a: float, b: float, low: float, high: float
-) -> torch.Tensor:  # only interpl between [a, b], linearly increase from low to high
+) -> torch.Tensor:  # only interplement between [a, b], linearly increase from low to high
     mask_low = x <= a
     mask_high = x >= b
 
@@ -342,13 +340,14 @@ def train():
                             * mask[i:end, input_ids.shape[1] : -1]
                         )
                         # apply hidden regularization bonus
-                        hidden_loss = hidden_loss * linear_interpl(
+                        linear_result = linear_interpl(
                             (text_end_indices + 1)[i:end],
                             hidden_reg_len_bonus_a,
                             max_sample_length,
                             1,
                             hidden_reg_len_bonus_high,
                         )
+                        hidden_loss = hidden_loss * linear_result.unsqueeze(1)
                         # apply gating value bonus
                         gate_bonus = torch.exp(
                             gating_value_lambda * (0.5 - gate) ** 2
@@ -376,11 +375,17 @@ def train():
                                 new_compressed_hidden[:, update_index]
                             )
 
+                        loss = loss.mean()
+
                     accelerator.backward(loss)
+                    writer.add_scalar("loss/train", loss.item(), step)
                     torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
 
                 step_optimizer()
                 zero_grad_optimizer()
+
+                if step % 10 == 9:
+                    save_model(step + 1)
 
                 print(f"Step {step}, Loss: {loss.item():.3f}")
                 print("gating values: ", gate[:1, :10])
