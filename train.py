@@ -224,7 +224,7 @@ def train():
                     range(0, res.shape[0], batch_size),
                     desc=f"training epoch: {epoch + 1}",
                 ):
-                    if True:
+                    with accelerator.accumulate(model, vae, gater):
                         if step % train_gc_interval == 0:
                             cleanup()
                         end = (
@@ -232,7 +232,7 @@ def train():
                             if i + batch_size <= res.shape[0]
                             else res.shape[0]
                         )
-                        embeds = model.lm_head.weight[seqs[i:end]][:, :-1].to("cuda:0")
+                        embeds = model.model.model.embed_tokens(seqs[i:end][:, :-1])
                         hidden_cache_slice = hidden_cache[i:end]
                         with accelerator.autocast():
                             last_hidden = vae.uncompress(
@@ -364,7 +364,7 @@ def train():
                                 * gating_value_decay
                                 ** (step // gating_bonus_update_step)
                             )
-                            loss *= (end - i) / res.shape[0]
+                            loss *= (end - i)
 
                             # randomly update hidden cache
                             with torch.no_grad():
@@ -378,8 +378,8 @@ def train():
 
                         accelerator.backward(loss)
 
-                step_optimizer()
-                zero_grad_optimizer()
+                        step_optimizer()
+                        zero_grad_optimizer()
 
                 print(f"Step {step}, Loss: {loss.item():.3f}")
                 print("gating values: ", gate[:1, :10])
