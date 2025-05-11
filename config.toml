@@ -1,6 +1,6 @@
 [general]
 id = -1
-attention_implementation = sdpa
+attention_implementation = 'sdpa'
 
 [training]
 num_epochs = 2
