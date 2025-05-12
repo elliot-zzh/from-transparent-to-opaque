@@ -347,7 +347,7 @@ def train():
                                 max_sample_length,
                                 1,
                                 hidden_reg_len_bonus_high,
-                            )
+                            ).unqueeze(1)
                             # apply gating value bonus
                             gate_bonus = torch.exp(
                                 gating_value_lambda * (0.5 - gate) ** 2
