@@ -43,7 +43,7 @@ model = AutoModelForCausalLM.from_pretrained(
     model_name,
     device_map="auto",
     torch_dtype=torch.bfloat16,
-    attn_implementation="sdpa",
+    attn_implementation='sdpa',
 )
 torch.backends.cuda.enable_flash_sdp(True)
 
