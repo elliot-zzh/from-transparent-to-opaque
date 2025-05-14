@@ -17,25 +17,20 @@ data_test = pd.read_json(test_dataset_path, lines=True)
 class dataset(Dataset):
     def __init__(self, df):
         self.df = df
-        print("data tokenizing...")
-        self.input_ids, self.attn_mask = tokenize(
-            sum(
-                [
-                    [prompt + df["question"][i] + prompt_suffix] * sample_num
-                    for i in df.index
-                ],
-                [],
-            ),
-            direct=True,
+        self.problem = sum(
+            [
+                [prompt + df["question"][i] + prompt_suffix] * sample_num
+                for i in df.index
+            ],
+            [],
         )
         self.ans = sum([[df["answer"][i]] * sample_num for i in df.index], [])
-        print("data tokenization done")
 
     def __len__(self):
         return len(self.df.index)
 
     def __getitem__(self, index):
-        return self.input_ids[index], self.attn_mask[index], self.ans[index]
+        return self.problem[index], self.ans[index]
 
 
 data_train = DataLoader(

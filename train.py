@@ -2,6 +2,7 @@ import torch
 from tqdm import tqdm
 import torch.nn.functional as F
 from config import device
+from utils import tokenize
 from model import (
     model,
     writer,
@@ -100,7 +101,8 @@ def train():
     init_res = False
 
     while step <= total_steps:
-        for input_ids, problem_attn_mask, ans in data_train:
+        for problems, ans in data_train:
+            input_ids, problem_attn_mask = tokenize(problems, direct=True)
             input_ids = input_ids.to(device)
             problem_attn_mask = problem_attn_mask.to(device)
             cleanup()
@@ -238,7 +240,7 @@ def train():
                             last_hidden = vae.uncompress(
                                 F.dropout(
                                     hidden_cache_slice,
-                                    p=hidden_dropout_rate,
+                                    p=0,  # p=hidden_dropout_rate,
                                     training=True,
                                 )
                             )
@@ -307,6 +309,13 @@ def train():
                                 loss * rewards[i:end].unsqueeze(-1), clipped
                             )
                             loss *= mask[i:end, input_ids.shape[1] + 1 :]
+                            loss = (
+                                (loss.sum(dim=-1))
+                                / (text_end_indices[i:end] + 1).sum()
+                                * (
+                                    -1
+                                )  # here we want to maximaize it, aligned with DAPO target
+                            )
 
                             # compute loss
                             new_compressed_hidden = vae(
@@ -347,16 +356,11 @@ def train():
                                 max_sample_length,
                                 1,
                                 hidden_reg_len_bonus_high,
-                            ).unqueeze(1)
+                            ).unsqueeze(1)
                             # apply gating value bonus
                             gate_bonus = torch.exp(
                                 gating_value_lambda * (0.5 - gate) ** 2
                             ).mean()
-                            loss = (
-                                (loss.sum(dim=-1))
-                                / (text_end_indices[i:end] + 1).sum()
-                                * (-1)
-                            )
                             loss += hidden_loss.mean() * hidden_regularization_rate
                             loss += (
                                 gate_bonus

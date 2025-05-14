@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
 from torch.optim import AdamW, Adam
-from torch.optim.lr_scheduler import CosineAnnealingLR
+from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, ChainedScheduler
 from config import model_name, accelerator
 from data import data_train
 from transformers import AutoModelForCausalLM
@@ -16,9 +16,11 @@ import os
 from parameters import (
     lr,
     vae_lr,
+    gater_lr_start_factor,
     gater_lr,
     gater_lr_min,
     gater_lr_decay_interval,
+    gater_lr_warmup_interval,
     experiment_id,
 )
 
@@ -72,9 +74,24 @@ optimizers = [
     AdamW(vae.parameters(), lr=vae_lr),
     Adam(gater.parameters(), lr=gater_lr),
 ]
-gater_scheduler = CosineAnnealingLR(
-    optimizers[2], T_max=gater_lr_decay_interval, eta_min=gater_lr_min
+
+warmup_scheduler = LinearLR(
+    optimizers[2],
+    start_factor=gater_lr_start_factor,
+    total_iters=gater_lr_warmup_interval,
 )
+cosine_scheduler = CosineAnnealingLR(
+    optimizers[2],
+    T_max=gater_lr_decay_interval,
+    eta_min=gater_lr_min,
+)
+gater_scheduler = ChainedScheduler(
+    [
+        warmup_scheduler,
+        cosine_scheduler,
+    ]
+)
+
 (model, vae, gater, optimizers[0], optimizers[1], optimizers[2], data_train) = (
     accelerator.prepare(
         model, vae, gater, optimizers[0], optimizers[1], optimizers[2], data_train

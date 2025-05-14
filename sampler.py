@@ -70,7 +70,7 @@ def sampler(
                     hidden_cache,
                     F.dropout(
                         vae(last_hidden[:, -1:, :], compressing=True),
-                        p=hidden_dropout_rate,
+                        p=0,  # p=hidden_dropout_rate,
                         training=True,
                     ),
                 ],
