@@ -2,7 +2,7 @@
 id = -1
 
 [training]
-num_epochs = 2
+num_epochs = 4
 total_steps = 1000
 log_interval = 1
 save_interval = 256
@@ -13,7 +13,7 @@ l_cache_length = 600
 sample_num = 24
 sample_topk = 12
 sample_temperature = 0.6
-sample_problem_batch = 2
+sample_problem_batch = 4
 sample_problem_sub_batch = 1
 acc_check_only = false
 train_gc_interval = 12
@@ -24,11 +24,11 @@ clip_high = 0.3
 clip_low = 0.2
 lr = 5e-6
 vae_lr = 5e-6
-gater_lr = 2e-5
+gater_lr = 1e-4
 gater_lr_start_factor = 1e-1
-gater_lr_min = 2e-6
+gater_lr_min = 1e-5
 gater_lr_decay_interval = 1000
-gater_lr_warmup_interval = 500
+gater_lr_warmup_interval = 100
 
 [hidden_regularization]
 hidden_regularization_rate = 0.6
@@ -47,4 +47,4 @@ gating_bonus_update_step = 100
 looping_depth = 0
 hidden_layer_num = 20
 depth_start_layer_num = 10
-
+hidden_injection_layer = 0

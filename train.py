@@ -94,6 +94,7 @@ def norm(x: torch.Tensor) -> torch.Tensor:
 
 linear_interpl = torch.jit.script(linear_interpl)
 norm = torch.jit.script(norm)
+lossf = torch.nn.CrossEntropyLoss(reduction="none")
 
 
 def train():
@@ -234,7 +235,7 @@ def train():
                             if i + batch_size <= res.shape[0]
                             else res.shape[0]
                         )
-                        embeds = model.lm_head.weight[seqs[i:end]][:, :-1].to("cuda:0")
+                        embeds = model.lm_head.weight[seqs[i:end]][:, :-1]
                         hidden_cache_slice = hidden_cache[i:end]
                         with accelerator.autocast():
                             last_hidden = vae.uncompress(
@@ -279,10 +280,20 @@ def train():
                                     seqs.shape[1] - 1, dtype=torch.long, device=device
                                 ),
                                 extract_specific=hidden_layer_num,
+                                hidden_injection=last_hidden,
+                                hidden_injecting_func=lambda hidden_injection,
+                                hidden_state: torch.cat(
+                                    [
+                                        hidden_state[:, : input_ids.shape[1]],
+                                        gater(
+                                            last_hidden,
+                                            hidden_state[:, input_ids.shape[1] :],
+                                        ),
+                                    ],
+                                    dim=1,
+                                ),
                             )
-                            logits = model.lm_head(
-                                model.model.model.norm(final_hidden)
-                            ).float()
+                            logits = model.lm_head(model.model.model.norm(final_hidden))
 
                             """
                             loss = lossf(
@@ -294,22 +305,23 @@ def train():
                             """
 
                             # compute loss
-                            target = res[i:end, 1:]
+                            target = res[i:end]
                             target[target >= logits.shape[-1]] = 0
                             new_probs = (
-                                F.softmax(logits[:, input_ids.shape[1] - 1 :], dim=-1)
+                                F.log_softmax(
+                                    logits[:, input_ids.shape[1] - 1 :], dim=-1
+                                )
                                 .gather(-1, target.unsqueeze(-1))
                                 .squeeze(-1)
                             )
-                            clipped = loss = new_probs / res_probs[i:end, 1:]
-                            clipped[clipped >= clip_high + 1] = 1 + clip_high
-                            clipped[clipped <= 1 - clip_low] = 1 - clip_low
+                            loss = torch.exp(new_probs - res_probs[i:end])
+                            clipped = torch.clamp(loss, 1 - clip_high, 1 + clip_low)
                             clipped *= rewards[i:end].unsqueeze(-1)
                             loss = torch.min(
                                 loss * rewards[i:end].unsqueeze(-1), clipped
                             )
-                            loss *= mask[i:end, input_ids.shape[1] + 1 :]
-                            loss = (
+                            loss *= mask[i:end, input_ids.shape[1] :]
+                            dapo_loss = loss = (
                                 (loss.sum(dim=-1))
                                 / (text_end_indices[i:end] + 1).sum()
                                 * (
@@ -357,17 +369,23 @@ def train():
                                 1,
                                 hidden_reg_len_bonus_high,
                             ).unsqueeze(1)
+                            hidden_loss = (
+                                hidden_loss.mean() * hidden_regularization_rate
+                            )
+                            loss += hidden_loss
+
                             # apply gating value bonus
                             gate_bonus = torch.exp(
                                 gating_value_lambda * (0.5 - gate) ** 2
                             ).mean()
-                            loss += hidden_loss.mean() * hidden_regularization_rate
-                            loss += (
+
+                            gate_bonus = (
                                 gate_bonus
                                 * gating_value_bonus
                                 * gating_value_decay
                                 ** (step // gating_bonus_update_step)
                             )
+                            loss += gate_bonus
                             loss *= (end - i) / res.shape[0]
 
                             # randomly update hidden cache
@@ -387,6 +405,10 @@ def train():
 
                 print(f"Step {step}, Loss: {loss.item():.3f}")
                 print("gating values: ", gate[:1, :10])
+
+                print(
+                    f"hidden loss {hidden_loss}, gate bonus {gate_bonus} dapo_loss {dapo_loss}"
+                )
 
                 step += 1
 

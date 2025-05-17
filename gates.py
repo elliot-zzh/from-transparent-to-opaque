@@ -17,7 +17,7 @@ class CurrentStepMixerGater(nn.Module):
 
     def forward(self, hidden, embed):
         x = torch.cat([hidden, embed], dim=-1)
-        return self.act(self.w(x))
+        return self.act(self.w(x)) * 2
 
 
 class Gate(nn.Module):
@@ -28,15 +28,17 @@ class Gate(nn.Module):
         self.inject_scale = inject_scale
 
         self.norm = nn.RMSNorm(embed_dim)
-        self.time_mixing_gate = CurrentStepMixerGater(embed_dim)
+        self.injection_gate = CurrentStepMixerGater(embed_dim)
+        self.origin_gate = CurrentStepMixerGater(embed_dim)
 
     @torch.compile
     def forward(self, hidden, embed):
         hidden = self.norm(hidden)
-        gate = self.time_mixing_gate(hidden, embed) * 2
-        return embed * gate + (embed**2).mean() ** 0.5 * (1 - gate) * hidden
+        injection_gate = 1 - self.injection_gate(hidden, embed)
+        origin_gate = self.origin_gate(hidden, embed)
+        return embed * origin_gate + (embed**2).mean() ** 0.5 * injection_gate * hidden
 
     @torch.compile
     def forward_hidden(self, hidden, embed):  # forward hidden only
-        gate = self.time_mixing_gate(hidden, embed) * 2
-        return (embed**2).sum() ** 0.5 * (1 - gate) * hidden, gate
+        injection_gate = 1 - self.injection_gate(hidden, embed)
+        return (embed**2).mean() ** 0.5 * injection_gate * hidden, injection_gate

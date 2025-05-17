@@ -76,6 +76,7 @@ gating_bonus_update_step = config["gating_value"]["gating_bonus_update_step"]
 
 # other parameters
 looping_depth = config["model"]["looping_depth"]
+hidden_injection_layer = config["model"]["hidden_injection_layer"]
 gradient_accumulation_steps = config["training"]["gradient_accumulation_steps"]
 step = config["training"]["step"]
 hidden_layer_num = config["model"]["hidden_layer_num"]

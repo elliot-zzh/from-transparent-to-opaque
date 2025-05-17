@@ -64,6 +64,9 @@ def sampler(
     res_probs = torch.zeros(problem_batch_size, 0, dtype=torch.float32).to(device)
 
     for i in tqdm(range(max_length), desc="sampling progress"):
+        if i % gc_interval == 0:
+            cleanup()
+
         with accelerator.autocast():
             hidden_cache = torch.cat(
                 [
@@ -84,36 +87,35 @@ def sampler(
                 for depth_i in range(depth):
                     last_hidden = model_forward(
                         hidden_state=last_hidden,
-                        attn_mask=attn_mask[:, input_ids.shape[1] + i - 1 :],
-                        pos=cache_pos[-1:] - input_ids.shape[1] + 1,
+                        attn_mask=attn_mask[
+                            :, input_ids.shape[1] + i - 1 :
+                        ].contiguous(),
+                        pos=(cache_pos[-1:] - input_ids.shape[1] + 1).contiguous(),
                         kv_cache=deep_kv_cache[depth_i],
                         start_layer=depth_start_layer_num,
                         end_layer=hidden_layer_num,
                     )
                 uncompressed_hidden = last_hidden
 
-        if i % gc_interval == 0:
-            cleanup()
-
-        probs = nn.functional.softmax(logits / temperature, dim=-1)
-        probs_ = nn.functional.softmax(
-            logits, dim=-1
-        )  # without temperature, for training
-        topk_probs, indices = torch.topk(
-            probs, topk, largest=True, sorted=False, dim=-1
-        )
-        probs_ = probs_.gather(1, indices)
-        # probs = probs.masked_fill(probs < min_p * 1 / topk, 0)
-        selected_choice = torch.multinomial(
-            topk_probs.view(problem_batch_size, -1), num_samples=1
-        )
-        selected_index = indices.gather(1, selected_choice)
-        selected_probs = probs_.gather(1, selected_choice)
-        selected_index[(1 - text_end_mask).bool(), :] = eot
-        selected_probs[(1 - text_end_mask).bool(), :] = 1e6  # mask out
-        res = torch.cat([res, selected_index], dim=1)
-        res_probs = torch.cat([res_probs, selected_probs], dim=1)
-        selected_index = selected_index.view(problem_batch_size)
+            probs = nn.functional.softmax(logits / temperature, dim=-1)
+            probs_ = nn.functional.log_softmax(
+                logits, dim=-1
+            )  # without temperature, for training
+            topk_probs, indices = torch.topk(
+                probs, topk, largest=True, sorted=False, dim=-1
+            )
+            probs_ = probs_.gather(1, indices)
+            # probs = probs.masked_fill(probs < min_p * 1 / topk, 0)
+            selected_choice = torch.multinomial(
+                topk_probs.view(problem_batch_size, -1), num_samples=1
+            )
+            selected_index = indices.gather(1, selected_choice)
+            selected_probs = probs_.gather(1, selected_choice)
+            selected_index[(1 - text_end_mask).bool(), :] = eot
+            selected_probs[(1 - text_end_mask).bool(), :] = 1e6  # mask out
+            res = torch.cat([res, selected_index], dim=1)
+            res_probs = torch.cat([res_probs, selected_probs], dim=1)
+            selected_index = selected_index.view(problem_batch_size)
 
         if not gen_all_done and eot in selected_index:
             # text_end_appeared = True
@@ -136,12 +138,12 @@ def sampler(
             embeds = model.model.model.embed_tokens(
                 selected_index.view(problem_batch_size, 1)
             )
-            embeds = gater(uncompressed_hidden, embeds)
             final_hidden, last_hidden = model_forward(
                 hidden_state=embeds,
                 attn_mask=attn_mask,
                 pos=cache_pos,
                 kv_cache=kv_cache,
+                hidden_injection=uncompressed_hidden,
                 extract_specific=hidden_layer_num,
             )
             logits = model.lm_head(model.model.model.norm(final_hidden[:, -1, :]))
