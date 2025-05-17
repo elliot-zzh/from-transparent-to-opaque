@@ -1,11 +1,11 @@
 import torch
 
 device = torch.device(
-    "cuda"
+    'cuda'
     if torch.cuda.is_available()
-    else "mps"
+    else 'mps'
     if torch.backends.mps.is_available()
-    else "cpu"
+    else 'cpu'
 )
 batch_size = 20
 num_epochs = 30

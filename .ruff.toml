@@ -1,0 +1,18 @@
+# Ruff configuration file
+
+line-length = 88
+indent-width = 4
+target-version = "py311"
+
+[format]
+indent-style = "space"
+quote-style = "single"
+
+[lint]
+select = [
+    "E",  # pycodestyle errors
+    "F",  # pyflakes
+    "W",  # pycodestyle warnings
+    "I",  # isort
+]
+

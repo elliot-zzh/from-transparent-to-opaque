@@ -55,13 +55,13 @@ def save_model(steps):
     accelerator.wait_for_everyone()
     unwrapped_model = accelerator.unwrap_model(model)
     unwrapped_model.save_pretrained(
-        f"./model/model-{steps}",
+        f'./model/model-{steps}',
         is_main_process=accelerator.is_main_process,
         save_function=accelerator.save,
     )
-    accelerator.save_model(model, f"./model/model-{steps}")
-    accelerator.save_model(vae, f"./model/vae-{steps}")
-    accelerator.save_model(gater, f"./model/gater-{steps}")
+    accelerator.save_model(model, f'./model/model-{steps}')
+    accelerator.save_model(vae, f'./model/vae-{steps}')
+    accelerator.save_model(gater, f'./model/gater-{steps}')
 
 
 def step_optimizer():
@@ -94,7 +94,7 @@ def norm(x: torch.Tensor) -> torch.Tensor:
 
 linear_interpl = torch.jit.script(linear_interpl)
 norm = torch.jit.script(norm)
-lossf = torch.nn.CrossEntropyLoss(reduction="none")
+lossf = torch.nn.CrossEntropyLoss(reduction='none')
 
 
 def train():
@@ -186,8 +186,8 @@ def train():
                     res = res[filt]
                     text_end_indices = text_end_indices[filt]
 
-                print("correctness rate: ", correctness_rate)
-                writer.add_scalar("correctness_rate/train", correctness_rate, step)
+                print('correctness rate: ', correctness_rate)
+                writer.add_scalar('correctness_rate/train', correctness_rate, step)
 
                 # reward normalization to get advantage
                 max_len_mask = len_rewards >= max_sample_length
@@ -217,7 +217,7 @@ def train():
                     seqs = torch.cat([input_ids, res], dim=1)
 
             # training
-            print("start training")
+            print('start training')
             model.train()
             vae.train()
             gater.train()
@@ -225,7 +225,7 @@ def train():
                 cleanup()
                 for i in tqdm(
                     range(0, res.shape[0], batch_size),
-                    desc=f"training epoch: {epoch + 1}",
+                    desc=f'training epoch: {epoch + 1}',
                 ):
                     if True:
                         if step % train_gc_interval == 0:
@@ -403,11 +403,11 @@ def train():
                 step_optimizer()
                 zero_grad_optimizer()
 
-                print(f"Step {step}, Loss: {loss.item():.3f}")
-                print("gating values: ", gate[:1, :10])
+                print(f'Step {step}, Loss: {loss.item():.3f}')
+                print('gating values: ', gate[:1, :10])
 
                 print(
-                    f"hidden loss {hidden_loss}, gate bonus {gate_bonus} dapo_loss {dapo_loss}"
+                    f'hidden loss {hidden_loss}, gate bonus {gate_bonus} dapo_loss {dapo_loss}'
                 )
 
                 step += 1
@@ -419,8 +419,8 @@ def train():
             save_model(step)
 
     writer.close()
-    print("all done")
+    print('all done')
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     train()

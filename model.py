@@ -24,38 +24,38 @@ from parameters import (
     experiment_id,
 )
 
-if not os.path.exists("./data/vae/vae_epoch15.pth"):
-    os.makedirs("./data/vae")
+if not os.path.exists('./data/vae/vae_epoch15.pth'):
+    os.makedirs('./data/vae')
     downloaded_path = hf_hub_download(
-        repo_id="ethangoh7086cmd/gated-latent-reasoning-loop-vae",
-        filename="vae_epoch15.pth",
-        cache_dir="./data/vae",
+        repo_id='ethangoh7086cmd/gated-latent-reasoning-loop-vae',
+        filename='vae_epoch15.pth',
+        cache_dir='./data/vae',
         force_download=False,
     )
-    shutil.copy(downloaded_path, "./data/vae")
-    print("VAE model downloaded and saved to ./data/vae/vae_epoch15.pth")
+    shutil.copy(downloaded_path, './data/vae')
+    print('VAE model downloaded and saved to ./data/vae/vae_epoch15.pth')
     os.remove(downloaded_path)
 
 torch.manual_seed(42)
 
-writer = SummaryWriter(f"runs/experiment-{experiment_id}")
+writer = SummaryWriter(f'runs/experiment-{experiment_id}')
 
 # load the model
 model = AutoModelForCausalLM.from_pretrained(
     model_name,
-    device_map="auto",
+    device_map='auto',
     torch_dtype=torch.bfloat16,
-    attn_implementation="sdpa",
+    attn_implementation='sdpa',
 )
 torch.backends.cuda.enable_flash_sdp(True)
 
 # inject LoRA
 peft_config = LoraConfig(
-    init_lora_weights="pissa_niter_32",
-    task_type="CAUSAL_LM",
+    init_lora_weights='pissa_niter_32',
+    task_type='CAUSAL_LM',
     r=16,
     lora_alpha=32,
-    target_modules="all-linear",
+    target_modules='all-linear',
     lora_dropout=0.02,
 )
 model = get_peft_model(model, peft_config)
@@ -67,7 +67,7 @@ gater = Gate(2048, 0.01)
 # load VAE
 vae = VAE(2048, 256, 2048 * 4)
 vae = torch.jit.script(vae)
-vae.load_state_dict(torch.load("./data/vae/vae_epoch15.pth"))
+vae.load_state_dict(torch.load('./data/vae/vae_epoch15.pth'))
 
 optimizers = [
     AdamW(model.parameters(), lr=lr),
@@ -98,9 +98,9 @@ gater_scheduler = ChainedScheduler(
     )
 )
 
-lossf = nn.CrossEntropyLoss(reduction="none")
-hidden_regularizer = nn.MSELoss(reduction="none")
+lossf = nn.CrossEntropyLoss(reduction='none')
+hidden_regularizer = nn.MSELoss(reduction='none')
 
 # end_of_text mark
 # eot = tokenizer('<｜end▁of▁sentence｜>').input_ids[1:][0]
-im_end, eot = tokenizer("<|im_end|><|endoftext|>").input_ids
+im_end, eot = tokenizer('<|im_end|><|endoftext|>').input_ids

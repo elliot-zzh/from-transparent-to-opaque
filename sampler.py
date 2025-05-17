@@ -63,7 +63,7 @@ def sampler(
     res = torch.zeros(problem_batch_size, 0, dtype=torch.long).to(device)
     res_probs = torch.zeros(problem_batch_size, 0, dtype=torch.float32).to(device)
 
-    for i in tqdm(range(max_length), desc="sampling progress"):
+    for i in tqdm(range(max_length), desc='sampling progress'):
         if i % gc_interval == 0:
             cleanup()
 

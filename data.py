@@ -19,12 +19,12 @@ class dataset(Dataset):
         self.df = df
         self.problem = sum(
             [
-                [prompt + df["question"][i] + prompt_suffix] * sample_num
+                [prompt + df['question'][i] + prompt_suffix] * sample_num
                 for i in df.index
             ],
             [],
         )
-        self.ans = sum([[df["answer"][i]] * sample_num for i in df.index], [])
+        self.ans = sum([[df['answer'][i]] * sample_num for i in df.index], [])
 
     def __len__(self):
         return len(self.df.index)
@@ -39,7 +39,7 @@ data_train = DataLoader(
 # data_test = DataLoader(dataset(data_test), batch_size=sample_problem_batch * sample_num)
 
 
-boxed_match = re.compile(r"\\boxed\{[^}]*\}")
+boxed_match = re.compile(r'\\boxed\{[^}]*\}')
 
 
 def verifier(model_anss, corr_anss, corr_score=2, wrong_score=-1):

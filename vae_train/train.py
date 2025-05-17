@@ -15,9 +15,9 @@ import matplotlib.pyplot as plt
 
 def cleanup():
     gc.collect()
-    if device == "cuda":
+    if device == 'cuda':
         torch.cuda.empty_cache()
-    elif device == "mps":
+    elif device == 'mps':
         torch.mps.empty_cache()
 
 
@@ -59,7 +59,7 @@ def train_vae(epochs=num_epochs, collect_data=True):
 
                 if (step + 1) % (gradient_accumulation_steps * log_interval) == 0:
                     print(
-                        f"Epoch {epoch + 1}, Step {step + 1}, Train Loss: {loss.item():.3f}"
+                        f'Epoch {epoch + 1}, Step {step + 1}, Train Loss: {loss.item():.3f}'
                     )
 
             except KeyboardInterrupt:
@@ -70,7 +70,7 @@ def train_vae(epochs=num_epochs, collect_data=True):
             scaler.update()
             optimizer.zero_grad(set_to_none=True)
             gc.collect()
-            print(f"Epoch {epoch + 1}, Step {step + 1}, Train Loss: {loss.item():.3f}")
+            print(f'Epoch {epoch + 1}, Step {step + 1}, Train Loss: {loss.item():.3f}')
             if collect_data:
                 train_loss.append(loss.item())
 
@@ -104,31 +104,31 @@ def train_vae(epochs=num_epochs, collect_data=True):
             except KeyboardInterrupt:
                 cleanup()
 
-        print(f"Epoch {epoch + 1}, Test Loss: {loss.item() / count:.3f}")
+        print(f'Epoch {epoch + 1}, Test Loss: {loss.item() / count:.3f}')
 
         if collect_data:
             test_loss.append(loss.item() / count)
 
         if (epoch + 1) % save_interval == 0:
             # Save checkpoint
-            torch.save(vae.state_dict(), f"vae_epoch{epoch + 1}.pth")
-            print(f"Checkpoint saved at epoch {epoch + 1}")
+            torch.save(vae.state_dict(), f'vae_epoch{epoch + 1}.pth')
+            print(f'Checkpoint saved at epoch {epoch + 1}')
 
-    torch.save(vae.state_dict(), "vae_final.pth")
+    torch.save(vae.state_dict(), 'vae_final.pth')
 
-    print("Training complete. Final model saved as vae_final.pth")
+    print('Training complete. Final model saved as vae_final.pth')
 
     if collect_data:
-        print("Now plotting the loss")
+        print('Now plotting the loss')
 
-        plt.plot(train_loss, label="Train Loss")
-        plt.plot(test_loss, label="Test Loss")
+        plt.plot(train_loss, label='Train Loss')
+        plt.plot(test_loss, label='Test Loss')
 
-        plt.xlabel("Epoch")
-        plt.ylabel("Loss")
-        plt.title("VAE Training Loss")
+        plt.xlabel('Epoch')
+        plt.ylabel('Loss')
+        plt.title('VAE Training Loss')
         plt.legend()
-        plt.savefig("vae_training_loss.pdf")
-        plt.savefig("vae_training_loss.png")
+        plt.savefig('vae_training_loss.pdf')
+        plt.savefig('vae_training_loss.png')
 
-        print("Loss plot saved as vae_training_loss.pdf and vae_training_loss.png")
+        print('Loss plot saved as vae_training_loss.pdf and vae_training_loss.png')
