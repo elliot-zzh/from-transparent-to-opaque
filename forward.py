@@ -30,13 +30,15 @@ def model_forward(
                 hidden_state = hidden_injecting_func(hidden_injection, hidden_state)
         hidden_state = model.model.model.layers[layer_i](
             hidden_state,
-            attention_mask=causal_mask,
+            attention_mask=causal_mask.contiguous()
+            if causal_mask is not None
+            else None,
             position_ids=pos[None, :],
             cache_position=pos,
             past_key_value=kv_cache,
             output_attentions=False,
             use_cache=kv_cache is not None,
-            position_embeddings=pos_embed,
+            position_embeddings=[i.contiguous() for i in pos_embed],
         )[0]
         if layer_i == extract_specific:
             specific = hidden_state

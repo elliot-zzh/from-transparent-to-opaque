@@ -7,3 +7,5 @@ __pycache__
 *.log
 .ruff_cache
 .ipynb_checkpoints
+
+diff.diff

@@ -56,10 +56,11 @@ peft_config = LoraConfig(
     r=16,
     lora_alpha=32,
     target_modules='all-linear',
-    lora_dropout=0.02,
+    lora_dropout=0.01,
 )
 model = get_peft_model(model, peft_config)
 model.print_trainable_parameters()
+model.gradient_checkpointing_enable()
 
 # Gater
 gater = Gate(2048, 0.01)

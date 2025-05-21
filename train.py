@@ -157,7 +157,6 @@ def train():
                 print(tokenizer.decode(res[0], skip_special_tokens=True))
                 len_rewards = text_end_indices.float() + 1
                 l = (corr_filt := correctness_rewards == corr_reward).sum()
-                print(l)
 
                 # if l < 10:
                 #     continue

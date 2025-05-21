@@ -87,9 +87,7 @@ def sampler(
                 for depth_i in range(depth):
                     last_hidden = model_forward(
                         hidden_state=last_hidden,
-                        attn_mask=attn_mask[
-                            :, input_ids.shape[1] + i - 1 :
-                        ].contiguous(),
+                        attn_mask=attn_mask[:, input_ids.shape[1] - 1 :].contiguous(),
                         pos=(cache_pos[-1:] - input_ids.shape[1] + 1).contiguous(),
                         kv_cache=deep_kv_cache[depth_i],
                         start_layer=depth_start_layer_num,
