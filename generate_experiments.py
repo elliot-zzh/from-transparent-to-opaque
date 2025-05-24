@@ -84,8 +84,8 @@ def main():
     # Define hyperparameters to tune one at a time
     hyperparameters_to_tune = [
         {
-            'param_name': 'training.lr',
-            'param_values': [1e-6, 5e-6, 1e-5],
+            'param_name': 'training.gater_lr',
+            'param_values': [1e-6, 5e-6, 1e-5, 1e-4, 5e-4],
             'base_filename': 'config_lr',
         },
         {
