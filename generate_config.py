@@ -29,25 +29,6 @@ def write_configs_to_files(configs, base_filename, output_dir='configs'):
     return filenames
 
 
-def get_best_param_score(score_file, param_name):
-    if not os.path.exists(score_file):
-        print(
-            f'Score file {score_file} does not exist. Using default value for {param_name}.'
-        )
-        return None, None
-    best_value = None
-    best_score = float('-inf')
-    with open(score_file, 'r') as f:
-        for line in f:
-            value, score = line.strip().split(',')
-            value = float(value)
-            score = float(score)
-            if score > best_score:
-                best_score = score
-                best_value = value
-    return best_value, best_score
-
-
 def generate_training_scripts(filenames, gpu_num, script_name):
     script_lines = [
         '#!/bin/bash\n',
@@ -57,7 +38,12 @@ def generate_training_scripts(filenames, gpu_num, script_name):
     ]
 
     for filename in filenames:
-        script_lines.append(f'pending_tasks+=("--config {filename}")\n')
+        score_filename = filename.replace('.toml', '.txt').replace(
+            'configs/', 'scores/'
+        )
+        script_lines.append(
+            f'pending_tasks+=("--config {filename} --score_file {score_filename}")\n'
+        )
 
     script_lines.extend(
         [
@@ -70,7 +56,7 @@ def generate_training_scripts(filenames, gpu_num, script_name):
             '  gpu_queue=("${gpu_queue[@]:1}")\n',
             '  task=${pending_tasks[0]}\n',
             '  pending_tasks=("${pending_tasks[@]:1}")\n',
-            f'  accelerate launch --gpu_ids=$gpu train.py $task --traindataset dataset/train.jsonl --testdataset dataset/test.jsonl &\n',
+            f'  accelerate launch --gpu_ids=$gpu --num_processes=1 --mixed_precision=bf16 train.py $task --traindataset dataset/train.jsonl --testdataset dataset/test.jsonl &\n',
             '  pids+=($!)\n',
             '}\n',
             '\n',
@@ -95,6 +81,23 @@ def generate_training_scripts(filenames, gpu_num, script_name):
 
     os.chmod(script_name, 0o755)
     print(f"Training script '{script_name}' generated")
+
+
+def get_best_param_score(score_files, param_name):
+    best_value = None
+    best_score = float('-inf')
+    for score_file in score_files:
+        if not os.path.exists(score_file):
+            continue
+        with open(score_file, 'r') as f:
+            for line in f:
+                value, score = line.strip().split(',')
+                value = float(value)
+                score = float(score)
+                if score > best_score:
+                    best_score = score
+                    best_value = value
+    return best_value, best_score
 
 
 def main():
@@ -124,13 +127,11 @@ def main():
             'param_name': 'training.lr',
             'param_values': [1e-6, 5e-6, 1e-5],
             'base_filename': 'config_lr',
-            'score_filename': 'score_lr.txt',
         },
         {
             'param_name': 'training.batch_size',
             'param_values': [1, 2],
             'base_filename': 'config_batch',
-            'score_filename': 'score_batch.txt',
         },
     ]
 
@@ -148,33 +149,47 @@ def main():
     # Generate the main train.sh script
     with open('train.sh', 'w') as f:
         f.write('#!/bin/bash\n\n')
-        f.write(f'./train_lr.sh\n')
+        # Run lr tuning
+        f.write('./train_lr.sh\n')
         f.write('wait\n')
 
-        # Check the best lr and update the config
+        # Collect all score files for lr tuning
+        f.write('score_files=()\n')
+        for filename in lr_files:
+            score_filename = filename.replace('.toml', '.txt').replace(
+                'configs/', 'scores/'
+            )
+            f.write(f'score_files+=("{score_filename}")\n')
+
+        # Extract the best lr
         f.write(
-            f"best_lr=$(awk 'NR==1{{print $1}}' {hyperparameters_to_tune[0]['score_filename']} 2>/dev/null)\n"
+            'best_lr=$(python -c "import sys; print(sys.argv[1])" $(echo "${score_files[@]}" | tr " " "\\n" | xargs -I {} sh -c \'if [ -f "{}" ]; then awk \'NR==1{{print $1}}\' "{}"; fi\' | sort -nr | head -n 1))\n'
         )
-        f.write(f'if [ -z "$best_lr" ]; then\n')
+        f.write('if [ -z "$best_lr" ]; then\n')
         f.write(f'  best_lr={hyperparameters_to_tune[0]["param_values"][0]}\n')
-        f.write(f'fi\n')
+        f.write('fi\n')
         f.write(f'echo "Best lr: $best_lr"\n')
 
-        # Update original_config with best_lr
+        # Update the original configuration with the best lr
         f.write(
-            f"python -c \"import toml; config = toml.load('{config_file}'); config['training']['lr'] = float(os.environ.get('best_lr', {hyperparameters_to_tune[0]['param_values'][0]})); toml.dump(config, 'final_best_config.toml')\"\n"
+            f"python -c \"import sys; import toml; config = toml.load(sys.argv[1]); config['training']['lr'] = float(sys.argv[2]); toml.dump(config, 'configs/final_best_config.toml')\" {config_file} $best_lr\n"
         )
+        f.write('wait\n')
 
-        # Tune other hyperparameters
-        other_files = []
+        # Regenerate configs for other hyperparameters with the best lr
+        f.write('other_files=()\n')
         for hp in hyperparameters_to_tune[1:]:
-            configs = generate_single_param_configs(
-                original_config, hp['param_name'], hp['param_values']
+            f.write(
+                f"configs_{hp['base_filename']}=$(python -c \"import sys; import toml; config = toml.load('configs/final_best_config.toml'); configs = []; for value in {hp['param_values']}: config['{hp['param_name']}'] = value; configs.append(config.copy()); import os; os.makedirs('configs', exist_ok=True); filenames = []; for i, c in enumerate(configs): filename = os.path.join('configs', f'{hp['base_filename']}_' + str(i) + '.toml'); with open(filename, 'w') as f: toml.dump(c, f); filenames.append(filename); print(' '.join(filenames))\")\n"
             )
-            filenames = write_configs_to_files(configs, hp['base_filename'])
-            other_files.extend(filenames)
+            f.write(f'other_files+=" $(echo $configs_{hp["base_filename"]})"\n')
 
-        generate_training_scripts(other_files, gpu_num, 'train_other.sh')
+        # Generate training scripts for other hyperparameters with the best lr
+        f.write(
+            'generate_training_scripts other_files {gpu_num} train_other.sh\n'.format(
+                gpu_num=gpu_num
+            )
+        )
         f.write('./train_other.sh\n')
         f.write('wait\n')
 
