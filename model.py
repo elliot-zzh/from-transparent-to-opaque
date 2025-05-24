@@ -4,7 +4,7 @@ import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
 from torch.optim import AdamW, Adam
 from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, ChainedScheduler
-from config import model_name, accelerator
+from config import model_name, accelerator, device
 from data import data_train
 from transformers import AutoModelForCausalLM
 from peft import get_peft_model, LoraConfig
@@ -22,6 +22,9 @@ from parameters import (
     gater_lr_decay_interval,
     gater_lr_warmup_interval,
     experiment_id,
+    pissa_niter,
+    lora_r,
+    lora_alpha,
 )
 
 if not os.path.exists('./data/vae/vae_epoch15.pth'):
@@ -43,7 +46,7 @@ writer = SummaryWriter(f'runs/experiment-{experiment_id}')
 # load the model
 model = AutoModelForCausalLM.from_pretrained(
     model_name,
-    device_map='auto',
+    device_map=device,
     torch_dtype=torch.bfloat16,
     attn_implementation='sdpa',
 )
@@ -51,10 +54,10 @@ torch.backends.cuda.enable_flash_sdp(True)
 
 # inject LoRA
 peft_config = LoraConfig(
-    init_lora_weights='pissa_niter_32',
+    init_lora_weights='pissa_niter_' + str(pissa_niter),
     task_type='CAUSAL_LM',
-    r=16,
-    lora_alpha=32,
+    r=lora_r,
+    lora_alpha=lora_alpha,
     target_modules='all-linear',
     lora_dropout=0.01,
 )
@@ -68,7 +71,7 @@ gater = Gate(2048, 0.01)
 # load VAE
 vae = VAE(2048, 256, 2048 * 4)
 vae = torch.jit.script(vae)
-vae.load_state_dict(torch.load('./data/vae/vae_epoch15.pth'))
+vae.load_state_dict(torch.load('./data/vae/vae_epoch15.pth', map_location=device))
 
 optimizers = [
     AdamW(model.parameters(), lr=lr),
@@ -76,6 +79,7 @@ optimizers = [
     Adam(gater.parameters(), lr=gater_lr),
 ]
 
+'''
 warmup_scheduler = LinearLR(
     optimizers[2],
     start_factor=gater_lr_start_factor,
@@ -92,6 +96,7 @@ gater_scheduler = ChainedScheduler(
         cosine_scheduler,
     ]
 )
+'''
 
 (model, vae, gater, optimizers[0], optimizers[1], optimizers[2], data_train) = (
     accelerator.prepare(

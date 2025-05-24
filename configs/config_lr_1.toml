@@ -3,7 +3,7 @@ id = -1
 
 [training]
 num_epochs = 4
-total_steps = 1000
+total_steps = 8
 log_interval = 1
 save_interval = 256
 batch_size = 1
@@ -22,10 +22,10 @@ gradient_accumulation_steps = 32
 step = 1
 clip_high = 0.3
 clip_low = 0.2
-lr = 1e-6
+lr = 1e-5
 vae_lr = 5e-6
 gater_lr = 5e-5
-gater_lr_start_factor = 1e-1
+gater_lr_start_factor = 0.1
 gater_lr_min = 1e-5
 gater_lr_decay_interval = 1000
 gater_lr_warmup_interval = 100
@@ -42,7 +42,7 @@ hidden_updating_rate = 0.04
 
 [gating_value]
 enable_gating_bonus = true
-gating_bonus_mode = 'exp' # 'sq' | 'exp'
+gating_bonus_mode = "exp"
 gating_value_bonus = 0.5
 gating_value_decay = 0.95
 gating_value_lambda = 5

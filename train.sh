@@ -1,9 +1,12 @@
-#!/usr/bin/env bash
+#!/bin/bash
 
-pip install -r requirements.txt
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-echo "Starting training..."
-
-accelerate launch --gpu_ids=0 train.py --config configs/config_1.toml --traindataset dataset/train.jsonl --testdataset dataset/test.jsonl &
-accelerate launch --gpu_ids=1 train.py --config configs/config_2.toml --traindataset dataset/train.jsonl --testdataset dataset/test.jsonl &
-accelerate launch --gpu_ids=2 train.py --config configs/config_3.toml --traindataset dataset/train.jsonl --testdataset dataset/test.jsonl &
+./train_lr.sh
+wait
+best_lr=$(awk 'NR==1{print $1}' score_lr.txt 2>/dev/null)
+if [ -z "$best_lr" ]; then
+  best_lr=1e-06
+fi
+echo "Best lr: $best_lr"
+python -c "import toml; config = toml.load('config.toml'); config['training']['lr'] = float(os.environ.get('best_lr', 1e-06)); toml.dump(config, 'final_best_config.toml')"
+./train_other.sh
+wait

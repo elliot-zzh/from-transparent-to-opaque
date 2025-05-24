@@ -115,7 +115,7 @@ def sampler(
             res_probs = torch.cat([res_probs, selected_probs], dim=1)
             selected_index = selected_index.view(problem_batch_size)
 
-        if not gen_all_done and eot in selected_index:
+        if not gen_all_done and im_end in selected_index:
             # text_end_appeared = True
             text_end_mask.masked_fill_(selected_index == im_end, 0)
             text_end_indices.masked_fill_(selected_index == im_end, i)

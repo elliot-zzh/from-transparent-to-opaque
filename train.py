@@ -10,7 +10,7 @@ from model import (
     vae,
     gater,
     optimizers,
-    gater_scheduler,
+    # gater_scheduler,
     tokenizer,
     hidden_regularizer,
 )
@@ -45,6 +45,12 @@ from parameters import (
     save_interval,
     clip_high,
     clip_low,
+    gradient_accumulation_steps,
+    enable_hidden_regularization,
+    enable_length_reg_bonus,
+    enable_gating_bonus,
+    enable_hidden_updating,
+    gating_bonus_mode,
 )
 from forward import model_forward
 from sampler import sampler
@@ -67,7 +73,7 @@ def save_model(steps):
 def step_optimizer():
     for optim in optimizers:
         optim.step()
-    gater_scheduler.step()
+    # gater_scheduler.step()
 
 
 def zero_grad_optimizer():
@@ -94,8 +100,6 @@ def norm(x: torch.Tensor) -> torch.Tensor:
 
 linear_interpl = torch.jit.script(linear_interpl)
 norm = torch.jit.script(norm)
-lossf = torch.nn.CrossEntropyLoss(reduction='none')
-
 
 def train():
     step = 0
@@ -161,11 +165,10 @@ def train():
                 # if l < 10:
                 #     continue
 
-                hidden_cache = hidden_cache[:, :-1]  # truncate the end
-
                 init_res = False
 
                 correctness_rate = l.cpu().item() / res.shape[0]
+                '''
                 if (
                     l < res.shape[0] / 3 and l != 0
                 ):  # clip too many wrong answers, currently 1:2
@@ -175,7 +178,6 @@ def train():
                     filt = torch.cat(
                         [torch.nonzero(corr_filt, as_tuple=True)[0], incorr_filt], dim=0
                     )
-                    print(filt, res.shape)
                     filt = filt[torch.randperm(filt.size(0))]
                     correctness_rewards = correctness_rewards[filt]
                     len_rewards = len_rewards[filt]
@@ -184,6 +186,8 @@ def train():
                     hidden_cache = hidden_cache[filt]
                     res = res[filt]
                     text_end_indices = text_end_indices[filt]
+                    res_probs = res_probs[filt]
+                '''
 
                 print('correctness rate: ', correctness_rate)
                 writer.add_scalar('correctness_rate/train', correctness_rate, step)
@@ -205,21 +209,27 @@ def train():
                 rewards = correctness_rewards + len_rewards
                 rewards = norm(rewards)
 
+                # truncate to max_train_length if the sampled result is too long
+                if res.shape[1] > max_train_length:
+                    res = res[:, :max_train_length]
+                    hidden_cache = hidden_cache[:, :max_train_length]
+                    mask = mask[:, :max_train_length + input_ids.shape[1]]
+                    res_probs = res_probs[:, :max_train_length]
+
+                seqs = torch.cat([input_ids, res], dim=1)
+                hidden_cache = hidden_cache[:, :-1]  # truncate the end
+
             if acc_check_only:
                 continue
-
-            with torch.no_grad():
-                if res.shape[1] > max_train_length:
-                    seqs = torch.cat([input_ids, res[:, :max_train_length]], dim=1)
-                    hidden_cache = hidden_cache[:, : max_train_length - 1]
-                else:
-                    seqs = torch.cat([input_ids, res], dim=1)
 
             # training
             print('start training')
             model.train()
             vae.train()
             gater.train()
+
+            accumulated_steps = 0
+            
             for epoch in range(num_epochs):
                 cleanup()
                 for i in tqdm(
@@ -328,86 +338,91 @@ def train():
                                 )  # here we want to maximaize it, aligned with DAPO target
                             )
 
-                            # compute loss
+                            # compute hidden regularization
                             new_compressed_hidden = vae(
                                 hidden[:, input_ids.shape[1] - 1 : -1], compressing=True
                             )
-                            new_processed_hidden = vae.uncompress(new_compressed_hidden)
-                            if looping_depth > 0:  # deep looping
-                                for depth_i in range(looping_depth):
-                                    for layer_i in range(
-                                        depth_start_layer_num, hidden_layer_num
-                                    ):
-                                        last_hidden = model_forward(
-                                            hidden_state=new_processed_hidden,
-                                            attn_mask=mask[
-                                                i:end, input_ids.shape[1] - 1 : -1
-                                            ],
-                                            pos=hidden_pos,
-                                            start_layer=depth_start_layer_num,
-                                            end_layer=hidden_layer_num,
-                                        )
+                            if enable_hidden_regularization:
+                                new_processed_hidden = vae.uncompress(new_compressed_hidden)
+                                if looping_depth > 0:  # deep looping
+                                    for depth_i in range(looping_depth):
+                                        for layer_i in range(
+                                            depth_start_layer_num, hidden_layer_num
+                                        ):
+                                            last_hidden = model_forward(
+                                                hidden_state=new_processed_hidden,
+                                                attn_mask=mask[
+                                                    i:end, input_ids.shape[1] - 1 : -1
+                                                ],
+                                                pos=hidden_pos,
+                                                start_layer=depth_start_layer_num,
+                                                end_layer=hidden_layer_num,
+                                            )
 
-                            new_processed_hidden, gate = gater.forward_hidden(
-                                new_processed_hidden, embeds[:, input_ids.shape[1] :]
-                            )
-                            processed_hidden, _ = gater.forward_hidden(
-                                last_hidden, embeds[:, input_ids.shape[1] :]
-                            )
-                            hidden_loss = (
-                                hidden_regularizer(
-                                    new_processed_hidden, processed_hidden
-                                ).mean(dim=-1)
-                                * mask[i:end, input_ids.shape[1] : -1]
-                            )
-                            # apply hidden regularization bonus
-                            hidden_loss = hidden_loss * linear_interpl(
-                                (text_end_indices + 1)[i:end],
-                                hidden_reg_len_bonus_a,
-                                max_sample_length,
-                                1,
-                                hidden_reg_len_bonus_high,
-                            ).unsqueeze(1)
-                            hidden_loss = (
-                                hidden_loss.mean() * hidden_regularization_rate
-                            )
-                            loss += hidden_loss
-
-                            # apply gating value bonus
-                            gate_bonus = torch.exp(
-                                gating_value_lambda * (0.5 - gate) ** 2
-                            ).mean()
-
-                            gate_bonus = (
-                                gate_bonus
-                                * gating_value_bonus
-                                * gating_value_decay
-                                ** (step // gating_bonus_update_step)
-                            )
-                            loss += gate_bonus
-                            loss *= (end - i) / res.shape[0]
+                                new_processed_hidden, gate = gater.forward_hidden(
+                                    new_processed_hidden, embeds[:, input_ids.shape[1] :]
+                                )
+                                processed_hidden, _ = gater.forward_hidden(
+                                    last_hidden, embeds[:, input_ids.shape[1] :]
+                                )
+                                hidden_loss = (
+                                    hidden_regularizer(
+                                        new_processed_hidden, processed_hidden
+                                    ).mean(dim=-1)
+                                    * mask[i:end, input_ids.shape[1] : -1]
+                                )
+                                if enable_length_reg_bonus:
+                                    hidden_loss = hidden_loss * linear_interpl(
+                                        (text_end_indices + 1)[i:end],
+                                        hidden_reg_len_bonus_a,
+                                        max_sample_length,
+                                        1,
+                                        hidden_reg_len_bonus_high,
+                                    ).unsqueeze(1)
+                                hidden_loss = (
+                                    hidden_loss.mean() * hidden_regularization_rate
+                                )
+                                loss += hidden_loss
+                            
+                            if enable_gating_bonus:
+                                # apply gating value bonus
+                                gate_bonus = torch.exp(
+                                    gating_value_lambda * (0.5 - torch.abs(gate)) ** 2
+                                ).mean() if gating_bonus_mode == 'exp' else -1 * (gate ** 2).mean()
+                                gate_bonus = (
+                                    gate_bonus
+                                    * gating_value_bonus
+                                    * gating_value_decay
+                                    ** (step // gating_bonus_update_step)
+                                )
+                                loss += gate_bonus
+                                
+                            loss *= (end - i) / gradient_accumulation_steps
 
                             # randomly update hidden cache
-                            with torch.no_grad():
-                                update_index = torch.nonzero(
-                                    torch.randn(hidden_cache.shape[1], device=device)
-                                    < hidden_updating_rate
-                                )
-                                hidden_cache[i:end][:, update_index] = (
-                                    new_compressed_hidden[:, update_index]
-                                )
+                            if enable_hidden_updating:
+                                with torch.no_grad():
+                                    update_index = torch.nonzero(
+                                        torch.randn(hidden_cache.shape[1], device=device)
+                                        < hidden_updating_rate
+                                    )
+                                    hidden_cache[i:end][:, update_index] = (
+                                        new_compressed_hidden[:, update_index]
+                                    )
 
                         accelerator.backward(loss)
+                        accumulated_steps += 1
 
-                step_optimizer()
-                zero_grad_optimizer()
+                        if accumulated_steps % gradient_accumulation_steps == 0:
+                            step_optimizer()
+                            zero_grad_optimizer()
+
+                if accumulated_steps % gradient_accumulation_steps != 0:
+                    step_optimizer()
+                    zero_grad_optimizer()
 
                 print(f'Step {step}, Loss: {loss.item():.3f}')
                 print('gating values: ', gate[:1, :10])
-
-                print(
-                    f'hidden loss {hidden_loss}, gate bonus {gate_bonus} dapo_loss {dapo_loss}'
-                )
 
                 step += 1
 
