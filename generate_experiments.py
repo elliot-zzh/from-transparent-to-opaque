@@ -4,6 +4,7 @@ import sys
 
 
 def generate_single_param_configs(original_config, param_name, param_values):
+    """Generate multiple configurations by varying a single parameter."""
     configs = []
     for value in param_values:
         new_config = original_config.copy()
@@ -17,6 +18,7 @@ def generate_single_param_configs(original_config, param_name, param_values):
 
 
 def write_configs_to_files(configs, base_filename, output_dir='configs'):
+    """Write configuration dictionaries to TOML files."""
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     filenames = []
@@ -29,56 +31,36 @@ def write_configs_to_files(configs, base_filename, output_dir='configs'):
     return filenames
 
 
-def generate_training_scripts(filenames, gpu_num, script_name):
+def generate_sub_script(sub_script_name, assigned_configs, gpu_id):
+    """Generate a Bash sub-script to run assigned training jobs sequentially on a specific GPU."""
     script_lines = [
         '#!/bin/bash\n',
         '\n',
-        f'gpu_queue=($(seq 0 {gpu_num - 1}))\n',
-        'pending_tasks=()\n',
     ]
-
-    for filename in filenames:
-        script_lines.append(f'pending_tasks+=("--config {filename}\n")')
-
-    script_lines.extend(
-        [
-            '\n',
-            'pids=()\n',
-            'launch_next_task() {\n',
-            '  if [ ${#pending_tasks[@]} -eq 0 ]; then return; fi\n',
-            '  if [ ${#gpu_queue[@]} -eq 0 ]; then return; fi\n',
-            '  gpu=${gpu_queue[0]}\n',
-            '  gpu_queue=("${gpu_queue[@]:1}")\n',
-            '  task=${pending_tasks[0]}\n',
-            '  pending_tasks=("${pending_tasks[@]:1}")\n',
-            f'  accelerate launch --gpu_ids=$gpu --num_processes=1 --mixed_precision=bf16 train.py $task --traindataset dataset/train.jsonl --testdataset dataset/test.jsonl &\n',
-            '  pids+=($!)\n',
-            '}\n',
-            '\n',
-            'while [ ${#pending_tasks[@]} -gt 0 ] || [ ${#pids[@]} -gt 0 ]; do\n',
-            '  while [ ${#pending_tasks[@]} -gt 0 ] && [ ${#gpu_queue[@]} -gt 0 ]; do launch_next_task; done\n',
-            '  for i in $(seq 0 $((${#pids[@]} - 1)) ); do\n',
-            '    if ! ps -p ${pids[$i]} > /dev/null; then\n',
-            '      gpu_used=$(grep -oP "gpu_ids=\K[0-9]+" <(ps -p ${pids[$i]} -o cmd=) 2>/dev/null || echo -1\n',
-            '      if [ $gpu_used -ne -1 ]; then gpu_queue+=($gpu_used); fi\n',
-            '      unset pids[$i]\n',
-            '      pids=("${pids[@]}")\n',
-            '    fi\n',
-            '  done\n',
-            '  sleep 1\n',
-            'done\n',
-            'wait\n',
-        ]
-    )
-
-    with open(script_name, 'w') as f:
+    for config in assigned_configs:
+        script_lines.append(
+            f'accelerate launch --gpu_ids={gpu_id} --num_processes=1 --mixed_precision=bf16 '
+            f'train.py --config {config} --traindataset dataset/train.jsonl --testdataset dataset/test.jsonl\n'
+        )
+    with open(sub_script_name, 'w') as f:
         f.writelines(script_lines)
+    os.chmod(sub_script_name, 0o755)
+    print(f"Sub-script '{sub_script_name}' generated")
 
-    os.chmod(script_name, 0o755)
-    print(f"Training script '{script_name}' generated")
+
+def generate_main_script(main_script_name, sub_script_names):
+    """Generate a main Bash script to run all sub-scripts in parallel and wait for completion."""
+    with open(main_script_name, 'w') as f:
+        f.write('#!/bin/bash\n\n')
+        for sub_script in sub_script_names:
+            f.write(f'./{sub_script} &\n')
+        f.write('wait\n')
+    os.chmod(main_script_name, 0o755)
+    print(f"Main training script '{main_script_name}' generated")
 
 
 def main():
+    """Main function to process input and generate scripts."""
     if len(sys.argv) < 4:
         print(
             'Usage: python script_name.py <original_config.toml> <gpu_num> <searching_step>'
@@ -113,6 +95,8 @@ def main():
         },
     ]
 
+    main_script_names = []
+
     for hp in hyperparameters_to_tune:
         # Generate configurations for the current hyperparameter
         configs = generate_single_param_configs(
@@ -120,20 +104,34 @@ def main():
         )
         filenames = write_configs_to_files(configs, hp['base_filename'])
 
-        # Generate training script for the current hyperparameter
-        script_name = f'train_{hp["base_filename"]}.sh'
-        generate_training_scripts(filenames, gpu_num, script_name)
+        base_filename = hp['base_filename']
+        sub_script_names = []
 
-    # Generate the main train.sh script to run all training scripts sequentially
+        # Generate sub-scripts for each GPU
+        for gpu in range(gpu_num):
+            # Assign configs to this GPU using round-robin distribution
+            assigned_configs = [
+                filenames[j] for j in range(len(filenames)) if j % gpu_num == gpu
+            ]
+            if (
+                assigned_configs
+            ):  # Only generate sub-script if there are configs assigned
+                sub_script_name = f'train_{base_filename}_gpu{gpu}.sh'
+                generate_sub_script(sub_script_name, assigned_configs, gpu)
+                sub_script_names.append(sub_script_name)
+
+        # Generate the main script for this hyperparameter
+        main_script_name = f'train_{base_filename}.sh'
+        generate_main_script(main_script_name, sub_script_names)
+        main_script_names.append(main_script_name)
+
+    # Generate the overall train.sh script to run all main scripts sequentially
     with open('train.sh', 'w') as f:
         f.write('#!/bin/bash\n\n')
-        for hp in hyperparameters_to_tune:
-            script_name = f'train_{hp["base_filename"]}.sh'
-            f.write(f'./{script_name}\n')
-            f.write('wait\n')
-
+        for main_script in main_script_names:
+            f.write(f'./{main_script}\n')
     os.chmod('train.sh', 0o755)
-    print("Main training script 'train.sh' generated")
+    print("Overall training script 'train.sh' generated")
 
 
 if __name__ == '__main__':
