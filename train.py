@@ -101,6 +101,7 @@ def norm(x: torch.Tensor) -> torch.Tensor:
 linear_interpl = torch.jit.script(linear_interpl)
 norm = torch.jit.script(norm)
 
+
 def train():
     step = 0
     init_res = False
@@ -168,7 +169,7 @@ def train():
                 init_res = False
 
                 correctness_rate = l.cpu().item() / res.shape[0]
-                '''
+                """
                 if (
                     l < res.shape[0] / 3 and l != 0
                 ):  # clip too many wrong answers, currently 1:2
@@ -187,7 +188,7 @@ def train():
                     res = res[filt]
                     text_end_indices = text_end_indices[filt]
                     res_probs = res_probs[filt]
-                '''
+                """
 
                 print('correctness rate: ', correctness_rate)
                 writer.add_scalar('correctness_rate/train', correctness_rate, step)
@@ -213,7 +214,7 @@ def train():
                 if res.shape[1] > max_train_length:
                     res = res[:, :max_train_length]
                     hidden_cache = hidden_cache[:, :max_train_length]
-                    mask = mask[:, :max_train_length + input_ids.shape[1]]
+                    mask = mask[:, : max_train_length + input_ids.shape[1]]
                     res_probs = res_probs[:, :max_train_length]
 
                 seqs = torch.cat([input_ids, res], dim=1)
@@ -229,7 +230,7 @@ def train():
             gater.train()
 
             accumulated_steps = 0
-            
+
             for epoch in range(num_epochs):
                 cleanup()
                 for i in tqdm(
@@ -343,7 +344,9 @@ def train():
                                 hidden[:, input_ids.shape[1] - 1 : -1], compressing=True
                             )
                             if enable_hidden_regularization:
-                                new_processed_hidden = vae.uncompress(new_compressed_hidden)
+                                new_processed_hidden = vae.uncompress(
+                                    new_compressed_hidden
+                                )
                                 if looping_depth > 0:  # deep looping
                                     for depth_i in range(looping_depth):
                                         for layer_i in range(
@@ -360,7 +363,8 @@ def train():
                                             )
 
                                 new_processed_hidden, gate = gater.forward_hidden(
-                                    new_processed_hidden, embeds[:, input_ids.shape[1] :]
+                                    new_processed_hidden,
+                                    embeds[:, input_ids.shape[1] :],
                                 )
                                 processed_hidden, _ = gater.forward_hidden(
                                     last_hidden, embeds[:, input_ids.shape[1] :]
@@ -383,12 +387,17 @@ def train():
                                     hidden_loss.mean() * hidden_regularization_rate
                                 )
                                 loss += hidden_loss
-                            
+
                             if enable_gating_bonus:
                                 # apply gating value bonus
-                                gate_bonus = torch.exp(
-                                    gating_value_lambda * (0.5 - torch.abs(gate)) ** 2
-                                ).mean() if gating_bonus_mode == 'exp' else -1 * (gate ** 2).mean()
+                                gate_bonus = (
+                                    torch.exp(
+                                        gating_value_lambda
+                                        * (0.5 - torch.abs(gate)) ** 2
+                                    ).mean()
+                                    if gating_bonus_mode == 'exp'
+                                    else -1 * (gate**2).mean()
+                                )
                                 gate_bonus = (
                                     gate_bonus
                                     * gating_value_bonus
@@ -396,14 +405,16 @@ def train():
                                     ** (step // gating_bonus_update_step)
                                 )
                                 loss += gate_bonus
-                                
+
                             loss *= (end - i) / gradient_accumulation_steps
 
                             # randomly update hidden cache
                             if enable_hidden_updating:
                                 with torch.no_grad():
                                     update_index = torch.nonzero(
-                                        torch.randn(hidden_cache.shape[1], device=device)
+                                        torch.randn(
+                                            hidden_cache.shape[1], device=device
+                                        )
                                         < hidden_updating_rate
                                     )
                                     hidden_cache[i:end][:, update_index] = (

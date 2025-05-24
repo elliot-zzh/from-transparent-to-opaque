@@ -79,7 +79,7 @@ optimizers = [
     Adam(gater.parameters(), lr=gater_lr),
 ]
 
-'''
+"""
 warmup_scheduler = LinearLR(
     optimizers[2],
     start_factor=gater_lr_start_factor,
@@ -96,7 +96,7 @@ gater_scheduler = ChainedScheduler(
         cosine_scheduler,
     ]
 )
-'''
+"""
 
 (model, vae, gater, optimizers[0], optimizers[1], optimizers[2], data_train) = (
     accelerator.prepare(

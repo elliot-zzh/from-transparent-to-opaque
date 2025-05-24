@@ -46,7 +46,9 @@ class Gate(nn.Module):
             origin_gate = self.origin_gate(hidden, embed)
             return embed * origin_gate + injection_scale * injection_gate * hidden
         else:
-            return embed * (1 - injection_gate) + injection_scale * injection_gate * hidden
+            return (
+                embed * (1 - injection_gate) + injection_scale * injection_gate * hidden
+            )
 
     def forward_hidden(self, hidden, embed):  # forward hidden only
         injection_gate = 1 - self.injection_gate(hidden, embed)
