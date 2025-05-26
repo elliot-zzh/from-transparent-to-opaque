@@ -27,6 +27,12 @@ from parameters import (
     lora_alpha,
 )
 
+def print_num_parameters(model: nn.Module):
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"Total Parameters: {total_params:,}")
+    print(f"Trainable Parameters: {trainable_params:,}")
+
 if not os.path.exists('./data/vae/vae_epoch15.pth'):
     os.makedirs('./data/vae')
     downloaded_path = hf_hub_download(
@@ -72,6 +78,11 @@ gater = Gate(2048, 0.01)
 vae = VAE(2048, 256, 2048 * 4)
 vae = torch.jit.script(vae)
 vae.load_state_dict(torch.load('./data/vae/vae_epoch15.pth', map_location=device))
+
+print('gater: ', end=' ')
+print_num_parameters(gater)
+print('vae: ', end=' ')
+print_num_parameters(vae)
 
 optimizers = [
     AdamW(model.parameters(), lr=lr),
