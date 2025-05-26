@@ -28,6 +28,8 @@ def model_forward(
                 hidden_state = gater(hidden_injection, hidden_state)
             else:
                 hidden_state = hidden_injecting_func(hidden_injection, hidden_state)
+        if layer_i == extract_specific:
+            specific = hidden_state
         hidden_state = model.model.model.layers[layer_i](
             hidden_state,
             attention_mask=causal_mask.contiguous()
@@ -40,8 +42,6 @@ def model_forward(
             use_cache=kv_cache is not None,
             position_embeddings=[i.contiguous() for i in pos_embed],
         )[0]
-        if layer_i == extract_specific:
-            specific = hidden_state
 
     if extract_specific is not None:
         return hidden_state, specific
