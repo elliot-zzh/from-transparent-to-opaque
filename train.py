@@ -207,11 +207,13 @@ def train():
                 rewards = norm(rewards)
 
                 # truncate to max_train_length if the sampled result is too long
-                if res.shape[1] > max_train_length:
-                    res = res[:, :max_train_length]
-                    hidden_cache = hidden_cache[:, :max_train_length]
-                    mask = mask[:, : max_train_length + input_ids.shape[1]]
-                    res_probs = res_probs[:, :max_train_length]
+                if res.shape[1] + input_ids.shape[1] > max_train_length:
+                    res = res[:, : max_train_length - input_ids.shape[1]]
+                    hidden_cache = hidden_cache[
+                        :, : max_train_length - input_ids.shape[1]
+                    ]
+                    mask = mask[:, :max_train_length]
+                    res_probs = res_probs[:, : max_train_length - input_ids.shape[1]]
 
                 seqs = torch.cat([input_ids, res], dim=1)
                 hidden_cache = hidden_cache[:, :-1]  # truncate the end
@@ -430,7 +432,9 @@ def train():
 
                 print(rank, f'Step {step}, Loss: {loss.item():.3f}')
                 writer.add_scalar('loss/train', loss.item(), step)
-                print(rank, 'gating values: ', gate[:1, :10])
+                print(
+                    rank, 'gating values: ', gate[:1, :10]
+                )  # WARNING: this may not be generated when hidden reg is disabled
                 writer.add_scalar('gate_value/train', gate.mean().item(), step)
 
                 step += 1
