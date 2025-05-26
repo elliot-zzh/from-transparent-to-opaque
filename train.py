@@ -55,19 +55,15 @@ from parameters import (
 from forward import model_forward
 from sampler import sampler
 from utils import cleanup
+import os
+
+rank = os.environ['CUDA_VISIBLE_DEVICES']
 
 
 def save_model(steps):
-    accelerator.wait_for_everyone()
-    unwrapped_model = accelerator.unwrap_model(model)
-    unwrapped_model.save_pretrained(
-        f'./model/model-{steps}',
-        is_main_process=accelerator.is_main_process,
-        save_function=accelerator.save,
-    )
-    accelerator.save_model(model, f'./model/model-{steps}')
-    accelerator.save_model(vae, f'./model/vae-{steps}')
-    accelerator.save_model(gater, f'./model/gater-{steps}')
+    accelerator.save_model(model, f'./model/rank-{rank}-model-{steps}')
+    accelerator.save_model(vae, f'./model/rank-{rank}-vae-{steps}')
+    accelerator.save_model(gater, f'./model/rank-{rank}-gater-{steps}')
 
 
 def step_optimizer():
@@ -159,7 +155,7 @@ def train():
                         corr_score=corr_reward,
                     )
                 ).to(device)
-                print(tokenizer.decode(res[0], skip_special_tokens=True))
+                print(rank, tokenizer.decode(res[0], skip_special_tokens=True))
                 len_rewards = text_end_indices.float() + 1
                 l = (corr_filt := correctness_rewards == corr_reward).sum()
 
@@ -190,7 +186,7 @@ def train():
                     res_probs = res_probs[filt]
                 """
 
-                print('correctness rate: ', correctness_rate)
+                print(rank, 'correctness rate: ', correctness_rate)
                 writer.add_scalar('correctness_rate/train', correctness_rate, step)
 
                 # reward normalization to get advantage
@@ -224,7 +220,7 @@ def train():
                 continue
 
             # training
-            print('start training')
+            print(rank, 'start training')
             model.train()
             vae.train()
             gater.train()
@@ -432,8 +428,10 @@ def train():
                     step_optimizer()
                     zero_grad_optimizer()
 
-                print(f'Step {step}, Loss: {loss.item():.3f}')
-                print('gating values: ', gate[:1, :10])
+                print(rank, f'Step {step}, Loss: {loss.item():.3f}')
+                writer.add_scalar('loss/train', loss.item(), step)
+                print(rank, 'gating values: ', gate[:1, :10])
+                writer.add_scalar('gate_value/train', gate.mean().item(), step)
 
                 step += 1
 

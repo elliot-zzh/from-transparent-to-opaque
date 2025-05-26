@@ -1,17 +1,27 @@
 import toml
 import os
 import sys
+import copy
 
 
 def generate_single_param_configs(original_config, param_name, param_values):
     """Generate multiple configurations by varying a single parameter."""
     configs = []
     for value in param_values:
-        new_config = original_config.copy()
+        # Deep copy to avoid modifying original
+        new_config = copy.deepcopy(original_config)
+
+        # Navigate to nested parameter
         current_dict = new_config
         key_parts = param_name.split('.')
+
+        # Navigate to parent dict
         for part in key_parts[:-1]:
+            if part not in current_dict:
+                current_dict[part] = {}
             current_dict = current_dict[part]
+
+        # Set the final value
         current_dict[key_parts[-1]] = value
         configs.append(new_config)
     return configs
@@ -19,10 +29,14 @@ def generate_single_param_configs(original_config, param_name, param_values):
 
 def write_configs_to_files(configs, base_filename, output_dir='configs'):
     """Write configuration dictionaries to TOML files."""
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+    os.makedirs(output_dir, exist_ok=True)
     filenames = []
+
     for i, config in enumerate(configs):
+        # Substitute rank for id = -1 in general section
+        if 'general' in config and config['general'].get('id') == -1:
+            config['general']['id'] = i
+
         filename = os.path.join(output_dir, f'{base_filename}_{i}.toml')
         with open(filename, 'w') as f:
             toml.dump(config, f)
@@ -33,28 +47,44 @@ def write_configs_to_files(configs, base_filename, output_dir='configs'):
 
 def generate_sub_script(sub_script_name, assigned_configs, gpu_id):
     """Generate a Bash sub-script to run assigned training jobs sequentially on a specific GPU."""
-    script_lines = [
-        '#!/bin/bash\n',
-        '\n',
-    ]
-    for config in assigned_configs:
-        script_lines.append(
-            f'accelerate launch --gpu_ids={gpu_id} --num_processes=1 --mixed_precision=bf16 '
-            f'train.py --config {config} --traindataset dataset/train.jsonl --testdataset dataset/test.jsonl\n'
-        )
+    if not assigned_configs:
+        return
+
     with open(sub_script_name, 'w') as f:
-        f.writelines(script_lines)
+        f.write('#!/bin/bash\n\n')
+        f.write('set -e  # Exit on any error\n\n')
+
+        for config in assigned_configs:
+            f.write(
+                f'echo "Starting training with config: {config}"\n'
+                f'CUDA_VISIBLE_DEVICES={gpu_id} python '
+                f'train.py --config {config} --traindataset dataset/train.jsonl --testdataset dataset/test.jsonl\n'
+                f'echo "Completed training with config: {config}"\n\n'
+            )
+
     os.chmod(sub_script_name, 0o755)
     print(f"Sub-script '{sub_script_name}' generated")
 
 
 def generate_main_script(main_script_name, sub_script_names):
     """Generate a main Bash script to run all sub-scripts in parallel and wait for completion."""
+    if not sub_script_names:
+        return
+
     with open(main_script_name, 'w') as f:
         f.write('#!/bin/bash\n\n')
+        f.write('set -e  # Exit on any error\n\n')
+        f.write('echo "Starting parallel GPU training..."\n\n')
+
+        # Start all sub-scripts in background
         for sub_script in sub_script_names:
+            f.write(f'echo "Launching {sub_script}"\n')
             f.write(f'./{sub_script} &\n')
+
+        f.write('\necho "Waiting for all GPU processes to complete..."\n')
         f.write('wait\n')
+        f.write('echo "All GPU processes completed"\n')
+
     os.chmod(main_script_name, 0o755)
     print(f"Main training script '{main_script_name}' generated")
 
@@ -72,20 +102,35 @@ def main():
         print(f"Error: Configuration file '{config_file}' does not exist.")
         sys.exit(1)
 
-    gpu_num = int(sys.argv[2])
-    searching_step = int(sys.argv[3])
+    try:
+        gpu_num = int(sys.argv[2])
+        searching_step = int(sys.argv[3])
+    except ValueError:
+        print('Error: gpu_num and searching_step must be integers')
+        sys.exit(1)
 
-    with open(config_file, 'r') as f:
-        original_config = toml.load(f)
+    if gpu_num <= 0:
+        print('Error: gpu_num must be positive')
+        sys.exit(1)
+
+    # Load original config
+    try:
+        with open(config_file, 'r') as f:
+            original_config = toml.load(f)
+    except Exception as e:
+        print(f'Error loading config file: {e}')
+        sys.exit(1)
 
     # Update total_steps with searching_step
+    if 'training' not in original_config:
+        original_config['training'] = {}
     original_config['training']['total_steps'] = searching_step
 
     # Define hyperparameters to tune one at a time
     hyperparameters_to_tune = [
         {
-            'param_name': 'training.gater_lr',
-            'param_values': [1e-6, 5e-6, 1e-5, 1e-4, 5e-4],
+            'param_name': 'training.lr',
+            'param_values': [1e-6, 3e-6, 5e-6, 1e-5, 3e-5],
             'base_filename': 'config_lr',
         },
         {
@@ -98,6 +143,8 @@ def main():
     main_script_names = []
 
     for hp in hyperparameters_to_tune:
+        print(f'\nProcessing hyperparameter: {hp["param_name"]}')
+
         # Generate configurations for the current hyperparameter
         configs = generate_single_param_configs(
             original_config, hp['param_name'], hp['param_values']
@@ -113,6 +160,7 @@ def main():
             assigned_configs = [
                 filenames[j] for j in range(len(filenames)) if j % gpu_num == gpu
             ]
+
             if (
                 assigned_configs
             ):  # Only generate sub-script if there are configs assigned
@@ -121,17 +169,29 @@ def main():
                 sub_script_names.append(sub_script_name)
 
         # Generate the main script for this hyperparameter
-        main_script_name = f'train_{base_filename}.sh'
-        generate_main_script(main_script_name, sub_script_names)
-        main_script_names.append(main_script_name)
+        if sub_script_names:
+            main_script_name = f'train_{base_filename}.sh'
+            generate_main_script(main_script_name, sub_script_names)
+            main_script_names.append(main_script_name)
 
     # Generate the overall train.sh script to run all main scripts sequentially
-    with open('train.sh', 'w') as f:
-        f.write('#!/bin/bash\n\n')
-        for main_script in main_script_names:
-            f.write(f'./{main_script}\n')
-    os.chmod('train.sh', 0o755)
-    print("Overall training script 'train.sh' generated")
+    if main_script_names:
+        with open('train.sh', 'w') as f:
+            f.write('#!/bin/bash\n\n')
+            f.write('set -e  # Exit on any error\n\n')
+            f.write('echo "Starting hyperparameter search..."\n\n')
+
+            for main_script in main_script_names:
+                f.write(f'echo "Running hyperparameter sweep: {main_script}"\n')
+                f.write(f'./{main_script}\n')
+                f.write(f'echo "Completed hyperparameter sweep: {main_script}"\n\n')
+
+            f.write('echo "All hyperparameter sweeps completed"\n')
+
+        os.chmod('train.sh', 0o755)
+        print("\nOverall training script 'train.sh' generated")
+    else:
+        print('No scripts generated')
 
 
 if __name__ == '__main__':

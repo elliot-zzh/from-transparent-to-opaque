@@ -1,9 +1,9 @@
 [general]
-id = -1
+id = 0
 
 [training]
 num_epochs = 4
-total_steps = 4
+total_steps = 1000
 log_interval = 1
 save_interval = 256
 batch_size = 1
@@ -22,7 +22,7 @@ gradient_accumulation_steps = 32
 step = 1
 clip_high = 0.3
 clip_low = 0.2
-lr = 1e-5
+lr = 1e-6
 vae_lr = 5e-6
 gater_lr = 5e-5
 gater_lr_start_factor = 0.1
