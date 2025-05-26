@@ -27,11 +27,13 @@ from parameters import (
     lora_alpha,
 )
 
+
 def print_num_parameters(model: nn.Module):
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"Total Parameters: {total_params:,}")
-    print(f"Trainable Parameters: {trainable_params:,}")
+    print(f'Total Parameters: {total_params:,}')
+    print(f'Trainable Parameters: {trainable_params:,}')
+
 
 if not os.path.exists('./data/vae/vae_epoch15.pth'):
     os.makedirs('./data/vae')
