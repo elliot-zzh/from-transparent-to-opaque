@@ -75,6 +75,7 @@ def generate_main_script(main_script_name, sub_script_names):
         f.write('#!/bin/bash\n\n')
         f.write('set -e  # Exit on any error\n\n')
         f.write('echo "Starting parallel GPU training..."\n\n')
+        f.write('. ./log_vram_usage.sh\n\n vram_usage_log.csv 5')
 
         # Start all sub-scripts in background
         for sub_script in sub_script_names:

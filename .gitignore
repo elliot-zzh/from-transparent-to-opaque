@@ -10,3 +10,4 @@ __pycache__
 runs/
 
 diff.diff
+vram_usage_log.csv
