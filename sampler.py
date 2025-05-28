@@ -15,6 +15,18 @@ from forward import model_forward
 from utils import cleanup
 
 
+def pad_up(tensor: torch.Tensor, dim: int, target: int, filling=0) -> torch.Tensor:
+    assert tensor.shape[dim] <= target, (
+        'Target size must be greater than or equal to the current size.'
+    )
+    pad_size = target - tensor.shape[dim]
+    if pad_size == 0:
+        return tensor
+    pad = [0] * (2 * tensor.dim())
+    pad[-(2 * dim + 1)] = pad_size
+    return F.pad(tensor, pad, mode='constant', value=filling)
+
+
 def sampler(
     input_ids,
     attn_mask,
@@ -147,5 +159,12 @@ def sampler(
             logits = model.lm_head(model.model.model.norm(final_hidden[:, -1, :]))
 
     cleanup()
+
+    res = pad_up(res, filling=eot, dim=1, target=max_length)
+    res_probs = pad_up(res_probs, filling=eot, dim=1, target=max_length)
+    hidden_cache = pad_up(hidden_cache, filling=0, dim=1, target=max_length)
+    attn_mask = pad_up(
+        attn_mask, filling=0, dim=1, target=input_ids.shape[1] + max_length
+    )
 
     return res, res_probs, hidden_cache, text_end_indices, attn_mask

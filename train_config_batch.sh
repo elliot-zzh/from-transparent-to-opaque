@@ -6,8 +6,6 @@ echo "Starting parallel GPU training..."
 
 echo "Launching train_config_batch_gpu0.sh"
 ./train_config_batch_gpu0.sh &
-echo "Launching train_config_batch_gpu1.sh"
-./train_config_batch_gpu1.sh &
 
 echo "Waiting for all GPU processes to complete..."
 wait
