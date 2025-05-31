@@ -13,7 +13,7 @@ l_cache_length = 1536
 sample_num = 16
 sample_topk = 12
 sample_temperature = 0.6
-sample_problem_batch = 16
+sample_problem_batch = 12
 sample_problem_sub_batch = 4
 acc_check_only = false
 train_gc_interval = 16
@@ -43,7 +43,7 @@ hidden_updating_rate = 0.02
 [gating_value]
 enable_gating_bonus = true
 gating_bonus_mode = 'sq' # 'sq' | 'exp'
-gating_value_bonus = 0.0
+gating_value_bonus = 0.1
 gating_value_decay = 0.95
 gating_value_lambda = 5
 gating_bonus_update_step = 100
