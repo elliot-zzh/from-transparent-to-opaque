@@ -107,7 +107,7 @@ def train():
             input_ids, problem_attn_mask = tokenize(problems, direct=True)
             if input_ids.shape[1] >= max_train_length:
                 continue  # skip too long problems
-            
+
             input_ids = input_ids.to(device)
             problem_attn_mask = problem_attn_mask.to(device)
             cleanup()
