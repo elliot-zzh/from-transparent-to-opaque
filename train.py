@@ -159,6 +159,7 @@ def train():
                     )
                 ).to(device)
                 print(rank, tokenizer.decode(res[0], skip_special_tokens=True))
+                writer.add_text(f'sample/train', tokenizer.decode(res[0], skip_special_tokens=True), step)
                 len_rewards = text_end_indices.float() + 1
                 l = (corr_filt := correctness_rewards == corr_reward).sum()
 
@@ -439,8 +440,11 @@ def train():
                     rank, 'gating values: ', gate[:1, :10]
                 )  # WARNING: this may not be generated when hidden reg is disabled
                 writer.add_scalar(
-                    'gate_value/train', (gate**2).mean().item() ** 0.5, step
+                    'gate_value_avg/train', (gate**2).mean().item() ** 0.5, step
                 )
+                writer.add_scalar('gate_value_var/train', torch.var(gate**2).item(), step)
+                writer.add_histogram('gate_plot/2d', gate.cpu(), step)
+                writer.add_tensor('gate/train', gate.cpu(), step)
 
                 step += 1
 
