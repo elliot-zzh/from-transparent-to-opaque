@@ -88,10 +88,19 @@ def jsonl_dump(data_list, file_path):
         for data in data_list:
             f.write(json.dumps(data) + '\n')
 
+def process_math_dataset():
+    """
+    Processes the MATH dataset by extracting and normalizing the data.
+    """
+    train_data = extract_folder('train')
+    test_data = extract_folder('test')
+
+    jsonl_dump(train_data, os.path.join('data', 'math-train.jsonl'))
+    jsonl_dump(test_data, os.path.join('data', 'math-test.jsonl'))
 
 if __name__ == '__main__':
     # Example usage
     train_data = extract_folder('train')
     test_data = extract_folder('test')
-    jsonl_dump(train_data, os.path.join(root, 'train.jsonl'))
-    jsonl_dump(test_data, os.path.join(root, 'test.jsonl'))
+    jsonl_dump(train_data, os.path.join('data', 'math-train.jsonl'))
+    jsonl_dump(test_data, os.path.join('data', 'math-test.jsonl'))
