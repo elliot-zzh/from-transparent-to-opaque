@@ -2,19 +2,19 @@
 id = 0
 
 [training]
-num_epochs = 5
+num_epochs = 2
 total_steps = 1000
 log_interval = 1
-save_interval = 500
+save_interval = 256
 batch_size = 1
-max_train_length = 800
-max_sample_length = 1600
-l_cache_length = 1024
+max_train_length = 1024
+max_sample_length = 1536
+l_cache_length = 1536
 sample_num = 16
 sample_topk = 12
 sample_temperature = 0.6
-sample_problem_batch = 24
-sample_problem_sub_batch = 3
+sample_problem_batch = 12
+sample_problem_sub_batch = 4
 acc_check_only = false
 train_gc_interval = 16
 corr_reward = 2
@@ -33,27 +33,27 @@ gater_lr_warmup_interval = 100
 [hidden_regularization]
 enable_hidden_regularization = true
 enable_length_reg_bonus = true
-hidden_regularization_rate = 0.6
+hidden_regularization_rate = 1
 hidden_dropout_rate = 0.02
 hidden_reg_len_bonus_a = 20
 hidden_reg_len_bonus_high = 5
 enable_hidden_updating = true
-hidden_updating_rate = 0.05
+hidden_updating_rate = 0.02
 
 [gating_value]
 enable_gating_bonus = true
-gating_bonus_mode = "exp"
-gating_value_bonus = 0.2
+gating_bonus_mode = "sq"
+gating_value_bonus = 0.1
 gating_value_decay = 0.95
 gating_value_lambda = 5
 gating_bonus_update_step = 100
 
 [model]
-looping_depth = 1
+looping_depth = 0
 hidden_layer_num = 20
 depth_start_layer_num = 10
 hidden_injection_layer = 0
-pissa_niter = 0
+pissa_niter = 32
 lora_r = 16
 lora_alpha = 32
 double_gate = true

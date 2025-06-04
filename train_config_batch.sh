@@ -4,6 +4,8 @@ set -e  # Exit on any error
 
 echo "Starting parallel GPU training..."
 
+. ./log_vram_usage.sh vram_usage_log.csv 5 &
+
 echo "Launching train_config_batch_gpu0.sh"
 ./train_config_batch_gpu0.sh &
 

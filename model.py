@@ -31,8 +31,9 @@ from parameters import (
 def print_num_parameters(model: nn.Module):
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f'Total Parameters: {total_params:,}')
-    print(f'Trainable Parameters: {trainable_params:,}')
+    print(
+        f'Total Parameters: {total_params:,} Trainable Parameters: {trainable_params:,}'
+    )
 
 
 if not os.path.exists('./data/vae/vae_epoch15.pth'):
@@ -59,6 +60,9 @@ model = AutoModelForCausalLM.from_pretrained(
     attn_implementation='sdpa',
 )
 torch.backends.cuda.enable_flash_sdp(True)
+model.gradient_checkpointing_enable()
+model.config.use_sliding_window = True
+print('gradient checkpointing: ', model.model.gradient_checkpointing)
 
 # inject LoRA
 peft_config = LoraConfig(
@@ -71,7 +75,8 @@ peft_config = LoraConfig(
 )
 model = get_peft_model(model, peft_config)
 model.print_trainable_parameters()
-model.gradient_checkpointing_enable()
+
+print('gradient checkpointing: ', model.model.model.gradient_checkpointing)
 
 # Gater
 gater = Gate(2048, 0.01)

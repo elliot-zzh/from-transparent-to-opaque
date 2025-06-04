@@ -438,7 +438,9 @@ def train():
                 print(
                     rank, 'gating values: ', gate[:1, :10]
                 )  # WARNING: this may not be generated when hidden reg is disabled
-                writer.add_scalar('gate_value/train', gate.mean().item(), step)
+                writer.add_scalar(
+                    'gate_value/train', (gate**2).mean().item() ** 0.5, step
+                )
 
                 step += 1
 
