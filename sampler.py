@@ -7,7 +7,7 @@ from model import model, accelerator
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from transformers import DynamicCache
+from transformers import DynamicCache, SinkCache
 from tqdm import tqdm
 from parameters import hidden_layer_num, depth_start_layer_num, hidden_dropout_rate
 from model import im_end, eot
@@ -41,7 +41,7 @@ def sampler(
     # tokenize
     problem_batch_size = input_ids.shape[0]
     cache_pos = torch.arange(input_ids.shape[1], dtype=torch.long, device=device)
-    kv_cache = DynamicCache()
+    kv_cache = SinkCache(max_window_length=1024, num_sink_tokens=4)
 
     # prefill the problem
     with accelerator.autocast():

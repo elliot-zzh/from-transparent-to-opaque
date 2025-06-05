@@ -58,6 +58,8 @@ model = AutoModelForCausalLM.from_pretrained(
     torch_dtype=torch.bfloat16,
     attn_implementation='sdpa',
 )
+model.config.use_sliding_window = True
+model.config.sliding_window = 1024
 torch.backends.cuda.enable_flash_sdp(True)
 
 # inject LoRA
