@@ -45,7 +45,7 @@ def sampler(
     # tokenize
     problem_batch_size = input_ids.shape[0]
     cache_pos = torch.arange(input_ids.shape[1], dtype=torch.long, device=device)
-    kv_cache = SinkCache(window_length=1280, num_sink_tokens=4)
+    kv_cache = SinkCache(window_length=1024, num_sink_tokens=4)
     if depth > 0:
         deep_kv_cache = [
             SinkCache(window_length=256, num_sink_tokens=4) for _ in range(depth)

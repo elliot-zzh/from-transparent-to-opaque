@@ -62,6 +62,7 @@ model = AutoModelForCausalLM.from_pretrained(
 torch.backends.cuda.enable_flash_sdp(True)
 model.gradient_checkpointing_enable()
 model.config.use_sliding_window = True
+model.config.sliding_window = 1024
 print('gradient checkpointing: ', model.model.gradient_checkpointing)
 
 # inject LoRA
@@ -71,7 +72,7 @@ peft_config = LoraConfig(
     r=lora_r,
     lora_alpha=lora_alpha,
     target_modules='all-linear',
-    lora_dropout=0.01,
+    lora_dropout=0.02,
 )
 model = get_peft_model(model, peft_config)
 model.print_trainable_parameters()

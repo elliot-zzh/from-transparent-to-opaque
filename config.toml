@@ -2,13 +2,13 @@
 id = -1
 
 [training]
-num_epochs = 2
+num_epochs = 3
 total_steps = 1000
 log_interval = 1
 save_interval = 256
 batch_size = 1
 max_train_length = 2048
-max_sample_length = 2048
+max_sample_length = 2560
 l_cache_length = 2048
 sample_num = 16
 sample_topk = 12
@@ -18,7 +18,7 @@ sample_problem_sub_batch = 4
 acc_check_only = false
 train_gc_interval = 16
 corr_reward = 2
-gradient_accumulation_steps = 64
+gradient_accumulation_steps = 128
 step = 1
 clip_high = 0.3
 clip_low = 0.2
@@ -43,7 +43,7 @@ hidden_updating_rate = 0.02
 [gating_value]
 enable_gating_bonus = true
 gating_bonus_mode = 'sq' # 'sq' | 'exp'
-gating_value_bonus = 0.1
+gating_value_bonus = 0
 gating_value_decay = 0.95
 gating_value_lambda = 5
 gating_bonus_update_step = 100
