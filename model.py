@@ -25,6 +25,8 @@ from parameters import (
     pissa_niter,
     lora_r,
     lora_alpha,
+    lora_dropout,
+    sliding_window,
 )
 
 
@@ -62,7 +64,7 @@ model = AutoModelForCausalLM.from_pretrained(
 torch.backends.cuda.enable_flash_sdp(True)
 model.gradient_checkpointing_enable()
 model.config.use_sliding_window = True
-model.config.sliding_window = 1024
+model.config.sliding_window = sliding_window
 print('gradient checkpointing: ', model.model.gradient_checkpointing)
 
 # inject LoRA
