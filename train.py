@@ -114,32 +114,51 @@ def train():
             with torch.no_grad():
                 for i in range(0, sample_problem_batch, sample_problem_sub_batch):
                     if init_res:
-                        res_, res_probs_, hidden_cache_, text_end_indices_, mask_ = (
-                            sampler(
-                                input_ids[
-                                    i * sample_num : (i + sample_problem_sub_batch)
-                                    * sample_num
-                                ],
-                                problem_attn_mask[
-                                    i * sample_num : (i + sample_problem_sub_batch)
-                                    * sample_num
-                                ],
-                                num=sample_num,
-                                topk=sample_topk,
-                                max_length=max_sample_length,
-                                temperature=sample_temperature,
-                                depth=looping_depth,
-                            )
+                        (
+                            res_,
+                            res_probs_,
+                            text_end_indices_,
+                            mask_,
+                            concept_token_probs_,
+                            concept_token_indices_,
+                        ) = sampler(
+                            input_ids[
+                                i * sample_num : (i + sample_problem_sub_batch)
+                                * sample_num
+                            ],
+                            problem_attn_mask[
+                                i * sample_num : (i + sample_problem_sub_batch)
+                                * sample_num
+                            ],
+                            num=sample_num,
+                            topk=sample_topk,
+                            max_length=max_sample_length,
+                            temperature=sample_temperature,
+                            concet_temperature=0.1,  # TODO: configuration of this
+                            concept_topk=10,
+                            depth=looping_depth,
                         )
                         res = torch.cat([res, res_], dim=0)
                         res_probs = torch.cat([res, res_probs_], dim=0)
-                        hidden_cache = torch.cat([hidden_cache, hidden_cache_], dim=0)
+                        concept_token_probs = torch.cat(
+                            [concept_token_probs, concept_token_probs_], dim=0
+                        )
+                        concept_token_indices = torch.cat(
+                            [concept_token_indices, concept_token_indices_], dim=0
+                        )
                         text_end_indices = torch.cat(
                             [text_end_indices, text_end_indices_], dim=0
                         )
                         mask = torch.cat([mask, mask_], dim=0)
                     else:
-                        res, res_probs, hidden_cache, text_end_indices, mask = sampler(
+                        (
+                            res,
+                            res_probs,
+                            text_end_indices,
+                            mask,
+                            concept_token_probs,
+                            concept_token_indices,
+                        ) = sampler(
                             input_ids[: sample_problem_sub_batch * sample_num],
                             problem_attn_mask[: sample_problem_sub_batch * sample_num],
                             num=sample_num,
@@ -212,14 +231,20 @@ def train():
                 # truncate to max_train_length if the sampled result is too long
                 if res.shape[1] + input_ids.shape[1] > max_train_length:
                     res = res[:, : max_train_length - input_ids.shape[1]]
-                    hidden_cache = hidden_cache[
+                    concept_token_indices = concept_token_indices[
+                        :, : max_train_length - input_ids.shape[1]
+                    ]
+                    concept_token_probs = concept_token_probs[
                         :, : max_train_length - input_ids.shape[1]
                     ]
                     mask = mask[:, :max_train_length]
                     res_probs = res_probs[:, : max_train_length - input_ids.shape[1]]
 
-                seqs = torch.cat([input_ids, res], dim=1)
-                hidden_cache = hidden_cache[:, :-1]  # truncate the end
+                # attention: the end are all trauncated
+                concept_token_probs = concept_token_probs[:, :-1]
+                concept_token_indices = concept_token_indices[:, :-1]
+                mask = mask[:, :-1]
+                res = res[:, :-1]
 
             if acc_check_only:
                 continue
@@ -227,8 +252,6 @@ def train():
             # training
             print(rank, 'start training')
             model.train()
-            vae.train()
-            gater.train()
 
             accumulated_steps = 0
 
@@ -246,65 +269,23 @@ def train():
                             if i + batch_size <= res.shape[0]
                             else res.shape[0]
                         )
-                        embeds = model.lm_head.weight[seqs[i:end]][:, :-1]
-                        hidden_cache_slice = hidden_cache[i:end]
                         with accelerator.autocast():
-                            last_hidden = vae.uncompress(
-                                F.dropout(
-                                    hidden_cache_slice,
-                                    p=0,  # p=hidden_dropout_rate,
-                                    training=True,
-                                )
-                            )
-                            if looping_depth > 0:  # deep looping
-                                hidden_pos = torch.arange(
-                                    0,
-                                    last_hidden.shape[1],
-                                    dtype=torch.long,
-                                    device=device,
-                                )
-                                for depth_i in range(looping_depth):
-                                    for layer_i in range(
-                                        depth_start_layer_num, hidden_layer_num
-                                    ):
-                                        last_hidden = model_forward(
-                                            hidden_state=last_hidden,
-                                            attn_mask=mask[
-                                                i:end, input_ids.shape[1] - 1 : -1
-                                            ],
-                                            pos=hidden_pos,
-                                            start_layer=depth_start_layer_num,
-                                            end_layer=hidden_layer_num,
-                                        )
-
+                            embeds = model.model.model.embed_tokens(input_ids[i:end])
+                            soft_embeds = model.model.model.model.embed_tokens(
+                                concept_token_indices[i:end]
+                            ) * concept_token_probs[i:end].sum(dim=-1)
                             embeds = torch.cat(
                                 [
                                     embeds[:, : input_ids.shape[1]],
-                                    gater(last_hidden, embeds[:, input_ids.shape[1] :]),
+                                    soft_embeds,
                                 ],
                                 dim=1,
                             )
-                            final_hidden, hidden = model_forward(
-                                hidden_state=embeds,
-                                attn_mask=mask[i:end, :-1],
-                                pos=torch.arange(
-                                    seqs.shape[1] - 1, dtype=torch.long, device=device
-                                ),
-                                extract_specific=hidden_layer_num,
-                                hidden_injection=last_hidden,
-                                hidden_injecting_func=lambda hidden_injection,
-                                hidden_state: torch.cat(
-                                    [
-                                        hidden_state[:, : input_ids.shape[1]],
-                                        gater(
-                                            last_hidden,
-                                            hidden_state[:, input_ids.shape[1] :],
-                                        ),
-                                    ],
-                                    dim=1,
-                                ),
+                            logits = model(
+                                input_embeds=embeds,
+                                attention_mask=mask[i:end],
+                                return_dict=True,
                             )
-                            logits = model.lm_head(model.model.model.norm(final_hidden))
 
                             """
                             loss = lossf(
@@ -341,6 +322,7 @@ def train():
                             )
 
                             # compute hidden regularization
+                            """
                             new_compressed_hidden = vae(
                                 hidden[:, input_ids.shape[1] - 1 : -1], compressing=True
                             )
@@ -388,8 +370,9 @@ def train():
                                     hidden_loss.mean() * hidden_regularization_rate
                                 )
                                 loss += hidden_loss
+                                """
 
-                            if enable_gating_bonus:
+                            if False:
                                 # apply gating value bonus
                                 gate_bonus = (
                                     torch.exp(
@@ -410,7 +393,7 @@ def train():
                             loss *= (end - i) / gradient_accumulation_steps
 
                             # randomly update hidden cache
-                            if enable_hidden_updating:
+                            if False:
                                 with torch.no_grad():
                                     update_index = torch.nonzero(
                                         torch.randn(
@@ -435,10 +418,8 @@ def train():
 
                 print(rank, f'Step {step}, Loss: {loss.item():.3f}')
                 writer.add_scalar('loss/train', loss.item(), step)
-                print(
-                    rank, 'gating values: ', gate[:1, :10]
-                )  # WARNING: this may not be generated when hidden reg is disabled
-                writer.add_scalar('gate_value/train', gate.mean().item(), step)
+                print(rank, f'DAPO Loss: {dapo_loss.item():.3f}')
+                writer.add_scalar('dapo_loss/train', dapo_loss.item(), step)
 
                 step += 1
 
