@@ -78,11 +78,12 @@ def sampler(
         with accelerator.autocast():
             # concat concept tokens
             concept_probs = F.softmax(
-                logits / (concept_temperature * 0.9 ** (i // 10)), dim=-1
+                logits / concept_temperature, dim=-1
             )
             concept_probs, concept_indices = torch.topk(
                 concept_probs, concept_topk, largest=True, sorted=False, dim=-1
             )
+            concept_probs *= logits.gather(2, concept_indices)
             concept_probs /= concept_probs.sum(dim=-1, keepdim=True)
             concept_token_probs = torch.cat([concept_token_probs, concept_probs], dim=1)
             concept_token_indices = torch.cat(
@@ -93,7 +94,7 @@ def sampler(
                 * concept_probs.unsqueeze(-2)
             ).sum(dim=-1)
 
-            probs_ = nn.functional.log_softmax(
+            probs_ = F.log_softmax(
                 logits, dim=-1
             )  # without temperature, for training
             topk_probs, indices = torch.topk(

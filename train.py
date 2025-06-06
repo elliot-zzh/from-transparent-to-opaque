@@ -23,6 +23,8 @@ from parameters import (
     sample_problem_batch,
     corr_reward,
     looping_depth,
+    concept_temperature,
+    concept_topk,
     sample_temperature,
     sample_topk,
     sample_problem_sub_batch,
@@ -131,8 +133,8 @@ def train():
                             topk=sample_topk,
                             max_length=max_sample_length,
                             temperature=sample_temperature,
-                            concept_temperature=0.05,  # TODO: configuration of this
-                            concept_topk=15,
+                            concept_temperature=concept_temperature,
+                            concept_topk=concept_topk,
                         )
                         res = torch.cat([res, res_], dim=0)
                         res_probs = torch.cat([res, res_probs_], dim=0)
@@ -159,8 +161,8 @@ def train():
                             problem_attn_mask[: sample_problem_sub_batch * sample_num],
                             topk=sample_topk,
                             max_length=max_sample_length,
-                            concept_temperature=0.05,  # TODO: configuration of this
-                            concept_topk=15,
+                            concept_temperature=concept_temperature,
+                            concept_topk=concept_topk,
                         )
                         init_res = True
 
