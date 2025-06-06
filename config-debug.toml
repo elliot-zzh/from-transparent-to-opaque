@@ -12,11 +12,11 @@ max_sample_length = 2560
 l_cache_length = 2048
 concept_topk = 10
 concept_temperature = 0.1
-sample_num = 16
+sample_num = 1
 sample_topk = 1
 sample_temperature = 0.6
-sample_problem_batch = 4
-sample_problem_sub_batch = 4
+sample_problem_batch = 64
+sample_problem_sub_batch = 64
 acc_check_only = false
 train_gc_interval = 16
 corr_reward = 2
@@ -44,7 +44,7 @@ hidden_updating_rate = 0.02
 
 [gating_value]
 enable_gating_bonus = true
-gating_bonus_mode = 'sq' # 'sq' | 'exp'
+gating_bonus_mode = 'sq'       # 'sq' | 'exp'
 gating_value_bonus = 0.2
 gating_value_decay = 0.95
 gating_value_lambda = 5
