@@ -12,6 +12,7 @@ from tqdm import tqdm
 from parameters import hidden_layer_num, depth_start_layer_num, hidden_dropout_rate
 from model import im_end, eot
 from utils import cleanup
+from forward import model_forward
 
 
 def pad_up(tensor: torch.Tensor, dim: int, target: int, filling=0) -> torch.Tensor:
@@ -40,24 +41,22 @@ def sampler(
 
     # tokenize
     problem_batch_size = input_ids.shape[0]
-    cache_pos = torch.arange(input_ids.shape[1], dtype=torch.long, device=device)
-    kv_cache = SinkCache(max_window_length=1024, num_sink_tokens=4)
+    cache_pos = torch.arange(input_ids.shape[1], dtype=torch.int, device=device)
+    kv_cache = SinkCache(window_length=1024, num_sink_tokens=4)
 
     # prefill the problem
     with accelerator.autocast():
-        embeds = model.model.model.embed_tokens(input_ids)
-        logits = model(
-            embeds,
-            attention_mask=attn_mask,
-            cache_position=cache_pos,
-            past_key_values=kv_cache,
-            return_dict=True,
-        )
+        logits = model_forward(
+            model.model.model.embed_tokens(input_ids),
+            attn_mask=attn_mask,
+            pos=cache_pos,
+            kv_cache=kv_cache,
+        )[:, -1:].float()
 
     concept_token_probs = torch.Tensor(problem_batch_size, 0, concept_topk).to(device)
-    concept_token_indices = torch.Tensor(
-        problem_batch_size, 0, concept_topk, dtype=torch.long
-    ).to(device)
+    concept_token_indices = (
+        torch.Tensor(problem_batch_size, 0, concept_topk).int().to(device)
+    )
 
     # text_end_appeared = False # if the first <｜end▁of▁sentence｜>
     gen_all_done = False
@@ -77,35 +76,46 @@ def sampler(
             cleanup()
 
         with accelerator.autocast():
-            probs = nn.functional.softmax(logits / temperature, dim=-1)
+            # concat concept tokens
+            concept_probs = F.softmax(
+                logits / (concept_temperature * 0.9 ** (i // 10)), dim=-1
+            )
+            concept_probs, concept_indices = torch.topk(
+                concept_probs, concept_topk, largest=True, sorted=False, dim=-1
+            )
+            concept_probs /= concept_probs.sum(dim=-1, keepdim=True)
+            concept_token_probs = torch.cat([concept_token_probs, concept_probs], dim=1)
+            concept_token_indices = torch.cat(
+                [concept_token_indices, concept_indices], dim=1
+            )
+            embeds = (
+                model.model.model.embed_tokens(concept_indices).transpose(-2, -1)
+                * concept_probs.unsqueeze(-2)
+            ).sum(dim=-1)
+
             probs_ = nn.functional.log_softmax(
                 logits, dim=-1
             )  # without temperature, for training
             topk_probs, indices = torch.topk(
-                probs, topk, largest=True, sorted=False, dim=-1
+                logits, topk, largest=True, sorted=False, dim=-1
             )
-            probs_ = probs_.gather(1, indices)
+            topk_probs = F.softmax(topk_probs / temperature, dim=-1)
             # probs = probs.masked_fill(probs < min_p * 1 / topk, 0)
             selected_choice = torch.multinomial(
                 topk_probs.view(problem_batch_size, -1), num_samples=1
             )
-            selected_index = indices.gather(1, selected_choice)
-            selected_probs = probs_.gather(1, selected_choice)
+
+            selected_index = indices.view(problem_batch_size, -1).gather(
+                1, selected_choice
+            )
+            selected_probs = probs_.view(problem_batch_size, -1).gather(
+                1, selected_index
+            )
             selected_index[(1 - text_end_mask).bool(), :] = eot
             selected_probs[(1 - text_end_mask).bool(), :] = 1e6  # mask out
             res = torch.cat([res, selected_index], dim=1)
             res_probs = torch.cat([res_probs, selected_probs], dim=1)
             selected_index = selected_index.view(problem_batch_size)
-
-            # concat concept tokens
-            concept_probs = F.softmax(logits / concept_temperature, dim=-1)
-            concept_probs, concept_indices = torch.topk(
-                concept_probs, concept_topk, largest=True, sorted=False, dim=-1
-            )
-            concept_token_probs = torch.cat([concept_token_probs, concept_probs], dim=1)
-            concept_token_indices = torch.cat(
-                [concept_token_indices, concept_indices], dim=1
-            )
 
         if not gen_all_done and im_end in selected_index:
             # text_end_appeared = True
@@ -125,16 +135,12 @@ def sampler(
         # forward
         cache_pos = cache_pos[-1:] + 1
         with accelerator.autocast():
-            embeds = (
-                model.model.model.embed_tokens(concept_indices) * concept_probs
-            ).sum(dim=-1)
-            logits = model(
-                input_embeds=embeds,
-                attention_mask=attn_mask,
-                cache_position=cache_pos,
-                past_key_values=kv_cache,
-                return_dict=True,
-            ).logits
+            logits = model_forward(
+                embeds,
+                attn_mask=attn_mask,
+                pos=cache_pos,
+                kv_cache=kv_cache,
+            ).float()
 
     cleanup()
 

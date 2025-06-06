@@ -59,7 +59,8 @@ model = AutoModelForCausalLM.from_pretrained(
     attn_implementation='sdpa',
 )
 model.config.use_sliding_window = True
-model.config.sliding_window = 1024
+model.sliding_window = 2048
+model.gradient_checkpointing_enable()
 torch.backends.cuda.enable_flash_sdp(True)
 
 # inject LoRA
@@ -73,24 +74,15 @@ peft_config = LoraConfig(
 )
 model = get_peft_model(model, peft_config)
 model.print_trainable_parameters()
-model.gradient_checkpointing_enable()
 
 # Gater
 gater = Gate(2048, 0.01)
 
-# load VAE
-vae = VAE(2048, 256, 2048 * 4)
-vae = torch.jit.script(vae)
-vae.load_state_dict(torch.load('./data/vae/vae_epoch15.pth', map_location=device))
-
 print('gater: ', end=' ')
 print_num_parameters(gater)
-print('vae: ', end=' ')
-print_num_parameters(vae)
 
 optimizers = [
     AdamW(model.parameters(), lr=lr),
-    AdamW(vae.parameters(), lr=vae_lr),
     Adam(gater.parameters(), lr=gater_lr),
 ]
 
@@ -113,10 +105,8 @@ gater_scheduler = ChainedScheduler(
 )
 """
 
-(model, vae, gater, optimizers[0], optimizers[1], optimizers[2], data_train) = (
-    accelerator.prepare(
-        model, vae, gater, optimizers[0], optimizers[1], optimizers[2], data_train
-    )
+(model, gater, optimizers[0], optimizers[1], data_train) = accelerator.prepare(
+    model, gater, optimizers[0], optimizers[1], data_train
 )
 
 lossf = nn.CrossEntropyLoss(reduction='none')

@@ -7,7 +7,6 @@ from model import (
     model,
     writer,
     accelerator,
-    vae,
     gater,
     optimizers,
     # gater_scheduler,
@@ -52,7 +51,6 @@ from parameters import (
     enable_hidden_updating,
     gating_bonus_mode,
 )
-from forward import model_forward
 from sampler import sampler
 from utils import cleanup
 import os
@@ -130,13 +128,11 @@ def train():
                                 i * sample_num : (i + sample_problem_sub_batch)
                                 * sample_num
                             ],
-                            num=sample_num,
                             topk=sample_topk,
                             max_length=max_sample_length,
                             temperature=sample_temperature,
-                            concet_temperature=0.1,  # TODO: configuration of this
-                            concept_topk=10,
-                            depth=looping_depth,
+                            concept_temperature=0.05,  # TODO: configuration of this
+                            concept_topk=15,
                         )
                         res = torch.cat([res, res_], dim=0)
                         res_probs = torch.cat([res, res_probs_], dim=0)
@@ -161,10 +157,10 @@ def train():
                         ) = sampler(
                             input_ids[: sample_problem_sub_batch * sample_num],
                             problem_attn_mask[: sample_problem_sub_batch * sample_num],
-                            num=sample_num,
                             topk=sample_topk,
                             max_length=max_sample_length,
-                            depth=looping_depth,
+                            concept_temperature=0.05,  # TODO: configuration of this
+                            concept_topk=15,
                         )
                         init_res = True
 
@@ -243,8 +239,8 @@ def train():
                 # attention: the end are all trauncated
                 concept_token_probs = concept_token_probs[:, :-1]
                 concept_token_indices = concept_token_indices[:, :-1]
-                mask = mask[:, :-1]
-                res = res[:, :-1]
+                res = res[:, 0:]
+                res_probs = res_probs[:, 0:]
 
             if acc_check_only:
                 continue
@@ -271,9 +267,12 @@ def train():
                         )
                         with accelerator.autocast():
                             embeds = model.model.model.embed_tokens(input_ids[i:end])
-                            soft_embeds = model.model.model.model.embed_tokens(
-                                concept_token_indices[i:end]
-                            ) * concept_token_probs[i:end].sum(dim=-1)
+                            soft_embeds = (
+                                model.model.model.embed_tokens(
+                                    concept_token_indices[i:end]
+                                ).transpose(-2, -1)
+                                * concept_token_probs[i:end].unsqueeze(-2)
+                            ).sum(dim=-1)
                             embeds = torch.cat(
                                 [
                                     embeds[:, : input_ids.shape[1]],
@@ -281,11 +280,13 @@ def train():
                                 ],
                                 dim=1,
                             )
-                            logits = model(
-                                input_embeds=embeds,
-                                attention_mask=mask[i:end],
+                            logits = model.model.forward(
+                                inputs_embeds=embeds,
+                                attention_mask=mask[i:end, :-1],
+                                use_cache=False,
+                                output_hidden_states=False,
                                 return_dict=True,
-                            )
+                            ).logits
 
                             """
                             loss = lossf(
@@ -418,8 +419,6 @@ def train():
 
                 print(rank, f'Step {step}, Loss: {loss.item():.3f}')
                 writer.add_scalar('loss/train', loss.item(), step)
-                print(rank, f'DAPO Loss: {dapo_loss.item():.3f}')
-                writer.add_scalar('dapo_loss/train', dapo_loss.item(), step)
 
                 step += 1
 
