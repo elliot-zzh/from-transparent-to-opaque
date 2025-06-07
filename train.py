@@ -116,7 +116,13 @@ def train():
             cleanup()
             with torch.no_grad():
                 for i in range(0, sample_problem_batch, sample_problem_sub_batch):
-                    concept_temperature_ = concept_temperature * min(concept_temperature_max, concept_temperature + (concept_temperature_max - concept_temperature) / concept_temperature_increase_step * step)
+                    concept_temperature_ = concept_temperature * min(
+                        concept_temperature_max,
+                        concept_temperature
+                        + (concept_temperature_max - concept_temperature)
+                        / concept_temperature_increase_step
+                        * step,
+                    )
                     if init_res:
                         (
                             res_,
@@ -292,7 +298,8 @@ def train():
                             ).sum(dim=-1)
                             if enable_gating:
                                 soft_embeds = gater(
-                                    soft_embeds, model.model.model.embed_tokens(res[i:end, :-1])
+                                    soft_embeds,
+                                    model.model.model.embed_tokens(res[i:end, :-1]),
                                 )
                             embeds = torch.cat(
                                 [

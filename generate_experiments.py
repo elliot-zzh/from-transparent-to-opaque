@@ -130,14 +130,14 @@ def main():
     # Define hyperparameters to tune one at a time
     hyperparameters_to_tune = [
         {
-            'param_name': 'training.lr',
-            'param_values': [1e-6, 3e-6, 5e-6, 1e-5, 3e-5],
-            'base_filename': 'config_lr',
+            'param_name': 'training.config_concept_temperature',
+            'param_values': [0.05, 0.1, 0.2],
+            'base_filename': 'config_concept_temperature',
         },
         {
-            'param_name': 'training.batch_size',
-            'param_values': [1, 2],
-            'base_filename': 'config_batch',
+            'param_name': 'training.concept_topk',
+            'param_values': [10, 15],
+            'base_filename': 'concept_topk',
         },
     ]
 

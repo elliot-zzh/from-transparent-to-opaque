@@ -38,10 +38,10 @@ class Gate(nn.Module):
     @torch.compile
     def forward(self, hidden, embed):
         injection_gate = self.injection_gate(hidden, embed)
-        return (
-            embed * (1 - injection_gate) + injection_gate * hidden
-        )
+        return embed * (1 - injection_gate) + injection_gate * hidden
 
-    def forward_hidden(self, hidden, embed):  # deprecated currently -- just reserved for possible use
+    def forward_hidden(
+        self, hidden, embed
+    ):  # deprecated currently -- just reserved for possible use
         injection_gate = 1 - self.injection_gate(hidden, embed)
         return injection_scale * hidden, injection_gate

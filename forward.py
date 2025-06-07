@@ -32,4 +32,3 @@ def model_forward(
         )[0]
 
     return model.lm_head(model.model.model.norm(hidden_state))
-

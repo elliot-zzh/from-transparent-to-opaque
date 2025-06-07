@@ -8,11 +8,17 @@ import torch.nn as nn
 import torch.nn.functional as F
 from transformers import DynamicCache, SinkCache
 from tqdm import tqdm
-from parameters import hidden_layer_num, depth_start_layer_num, hidden_dropout_rate, enable_gating
+from parameters import (
+    hidden_layer_num,
+    depth_start_layer_num,
+    hidden_dropout_rate,
+    enable_gating,
+)
 from model import im_end, eot, gater, model, accelerator
 from utils import cleanup
 from forward import model_forward
 import pandas as pd
+
 
 def safe_entropy(logits, eps=1e-10):
     # Compute entropy: -sum(p * log(p))
@@ -20,6 +26,7 @@ def safe_entropy(logits, eps=1e-10):
     probs = torch.softmax(logits, dim=-1)
     entropy = -torch.sum(probs * log_probs, dim=-1)
     return entropy
+
 
 def pad_up(tensor: torch.Tensor, dim: int, target: int, filling=0) -> torch.Tensor:
     assert tensor.shape[dim] <= target, (
@@ -61,7 +68,9 @@ def sampler(
             kv_cache=kv_cache,
         )[:, -1:].float()
 
-    concept_token_probs = torch.Tensor(problem_batch_size, 0, concept_topk).float().to(device)
+    concept_token_probs = (
+        torch.Tensor(problem_batch_size, 0, concept_topk).float().to(device)
+    )
     concept_token_indices = (
         torch.Tensor(problem_batch_size, 0, concept_topk).int().to(device)
     )
@@ -86,9 +95,7 @@ def sampler(
 
         with accelerator.autocast():
             # concat concept tokens
-            concept_probs = F.softmax(
-                logits / concept_temperature, dim=-1
-            )
+            concept_probs = F.softmax(logits / concept_temperature, dim=-1)
             concept_probs, concept_indices = torch.topk(
                 concept_probs, concept_topk, largest=True, sorted=False, dim=-1
             )
@@ -103,9 +110,7 @@ def sampler(
                 * concept_probs.unsqueeze(-2)
             ).sum(dim=-1)
 
-            probs_ = F.log_softmax(
-                logits, dim=-1
-            )  # without temperature, for training
+            probs_ = F.log_softmax(logits, dim=-1)  # without temperature, for training
             # entropy = torch.cat([entropy, safe_entropy(logits).view(problem_batch_size, -1)], dim=1) # compute entropy
             topk_probs, indices = torch.topk(
                 logits, topk, largest=True, sorted=False, dim=-1
@@ -147,7 +152,10 @@ def sampler(
         cache_pos = cache_pos[-1:] + 1
         with accelerator.autocast():
             if enable_gating:
-                embeds = gater(soft_embeds, model.model.model.embed_tokens(selected_index.unsqueeze(-1)))
+                embeds = gater(
+                    soft_embeds,
+                    model.model.model.embed_tokens(selected_index.unsqueeze(-1)),
+                )
             logits = model_forward(
                 embeds,
                 attn_mask=attn_mask,
