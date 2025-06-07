@@ -258,7 +258,7 @@ def train():
                 concept_token_indices = concept_token_indices[:, :-1]
                 res_probs = res_probs[:, 0:]
 
-            if True:
+            if acc_check_only:
                 continue
 
             # training
