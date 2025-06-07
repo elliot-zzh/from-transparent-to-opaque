@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 from parameters import (
     double_gate,
     enbale_injection_scale,
+    enable_gating,
 )
 
 
@@ -31,26 +32,22 @@ class Gate(nn.Module):
         self.dropout_rate = dropout_rate
         self.inject_scale = inject_scale
         self.double_gate = double_gate
-        self.enbale_injection_scale = enbale_injection_scale
 
-        self.norm = nn.RMSNorm(embed_dim)
         self.injection_gate = CurrentStepMixerGater(embed_dim)
         if double_gate:
             self.origin_gate = CurrentStepMixerGater(embed_dim)
 
+    @torch.compile
     def forward(self, hidden, embed):
-        hidden = self.norm(hidden)
         injection_gate = 1 - self.injection_gate(hidden, embed)
-        injection_scale = (embed**2).mean() ** 0.5 if self.enbale_injection_scale else 1
         if self.double_gate:
             origin_gate = self.origin_gate(hidden, embed)
-            return embed * origin_gate + injection_scale * injection_gate * hidden
+            return embed * origin_gate + injection_gate * hidden
         else:
             return (
-                embed * (1 - injection_gate) + injection_scale * injection_gate * hidden
+                embed * (1 - injection_gate) + injection_gate * hidden
             )
 
-    def forward_hidden(self, hidden, embed):  # forward hidden only
+    def forward_hidden(self, hidden, embed):  # deprecated currently -- just reserved for possible use
         injection_gate = 1 - self.injection_gate(hidden, embed)
-        injection_scale = (embed**2).mean() ** 0.5 if self.enbale_injection_scale else 1
         return injection_scale * hidden, injection_gate

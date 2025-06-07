@@ -3,17 +3,23 @@
 # https://github.com/huggingface/transformers/blob/main/src/transformers/models/qwen2/
 # https://github.com/huggingface/transformers/blob/main/src/transformers/models/qwen3/
 from config import device
-from model import model, accelerator
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from transformers import DynamicCache, SinkCache
 from tqdm import tqdm
-from parameters import hidden_layer_num, depth_start_layer_num, hidden_dropout_rate
-from model import im_end, eot
+from parameters import hidden_layer_num, depth_start_layer_num, hidden_dropout_rate, enable_gating
+from model import im_end, eot, gater, model, accelerator
 from utils import cleanup
 from forward import model_forward
+import pandas as pd
 
+def safe_entropy(logits, eps=1e-10):
+    # Compute entropy: -sum(p * log(p))
+    log_probs = torch.log_softmax(logits, dim=-1)
+    probs = torch.softmax(logits, dim=-1)
+    entropy = -torch.sum(probs * log_probs, dim=-1)
+    return entropy
 
 def pad_up(tensor: torch.Tensor, dim: int, target: int, filling=0) -> torch.Tensor:
     assert tensor.shape[dim] <= target, (
@@ -38,6 +44,7 @@ def sampler(
     gc_interval=48,
 ):
     model.eval()
+    gater.eval()
 
     # tokenize
     problem_batch_size = input_ids.shape[0]
@@ -57,6 +64,7 @@ def sampler(
     concept_token_indices = (
         torch.Tensor(problem_batch_size, 0, concept_topk).int().to(device)
     )
+    entropy = torch.Tensor(problem_batch_size, 0).to(device)
 
     # text_end_appeared = False # if the first <｜end▁of▁sentence｜>
     gen_all_done = False
@@ -89,7 +97,7 @@ def sampler(
             concept_token_indices = torch.cat(
                 [concept_token_indices, concept_indices], dim=1
             )
-            embeds = (
+            embeds = soft_embeds = (
                 model.model.model.embed_tokens(concept_indices).transpose(-2, -1)
                 * concept_probs.unsqueeze(-2)
             ).sum(dim=-1)
@@ -97,6 +105,7 @@ def sampler(
             probs_ = F.log_softmax(
                 logits, dim=-1
             )  # without temperature, for training
+            # entropy = torch.cat([entropy, safe_entropy(logits).view(problem_batch_size, -1)], dim=1) # compute entropy
             topk_probs, indices = torch.topk(
                 logits, topk, largest=True, sorted=False, dim=-1
             )
@@ -136,6 +145,8 @@ def sampler(
         # forward
         cache_pos = cache_pos[-1:] + 1
         with accelerator.autocast():
+            if enable_gating:
+                embeds = gater(soft_embeds, model.model.model.embed_tokens(selected_index.unsqueeze(-1)))
             logits = model_forward(
                 embeds,
                 attn_mask=attn_mask,
@@ -156,6 +167,9 @@ def sampler(
     attn_mask = pad_up(
         attn_mask, filling=0, dim=1, target=input_ids.shape[1] + max_length
     )
+
+    # entropy = entropy.transpose(0, 1).cpu().numpy()
+    # pd.DataFrame(entropy, columns=[f'Col{j+1}' for j in range(entropy.shape[1])]).to_csv('entropy.csv', index=False)
 
     return (
         res,

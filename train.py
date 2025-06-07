@@ -24,6 +24,8 @@ from parameters import (
     corr_reward,
     looping_depth,
     concept_temperature,
+    concept_temperature_increase_step,
+    concept_temperature_max,
     concept_topk,
     sample_temperature,
     sample_topk,
@@ -52,6 +54,7 @@ from parameters import (
     enable_gating_bonus,
     enable_hidden_updating,
     gating_bonus_mode,
+    enable_gating,
 )
 from sampler import sampler
 from utils import cleanup
@@ -113,6 +116,7 @@ def train():
             cleanup()
             with torch.no_grad():
                 for i in range(0, sample_problem_batch, sample_problem_sub_batch):
+                    concept_temperature_ = concept_temperature * min(concept_temperature_max, concept_temperature + (concept_temperature_max - concept_temperature) / concept_temperature_increase_step * step)
                     if init_res:
                         (
                             res_,
@@ -133,7 +137,7 @@ def train():
                             topk=sample_topk,
                             max_length=max_sample_length,
                             temperature=sample_temperature,
-                            concept_temperature=concept_temperature,
+                            concept_temperature=concept_temperature_,
                             concept_topk=concept_topk,
                         )
                         res = torch.cat([res, res_], dim=0)
@@ -161,7 +165,7 @@ def train():
                             problem_attn_mask[: sample_problem_sub_batch * sample_num],
                             topk=sample_topk,
                             max_length=max_sample_length,
-                            concept_temperature=concept_temperature,
+                            concept_temperature=concept_temperature_,
                             concept_topk=concept_topk,
                         )
                         init_res = True
@@ -175,7 +179,7 @@ def train():
                         corr_score=corr_reward,
                     )
                 ).to(device)
-                print(rank, tokenizer.decode(res[0], skip_special_tokens=True))
+                print(rank, tokenizer.batch_decode(res, skip_special_tokens=True))
                 len_rewards = text_end_indices.float() + 1
                 l = (corr_filt := correctness_rewards == corr_reward).sum()
 
@@ -205,6 +209,17 @@ def train():
                     text_end_indices = text_end_indices[filt]
                     res_probs = res_probs[filt]
                 """
+
+                shuffle_index = torch.randperm(res.shape[0])
+                res = res[shuffle_index]
+                mask = mask[shuffle_index]
+                res_probs = res_probs[shuffle_index]
+                text_end_indices = text_end_indices[shuffle_index]
+                input_ids = input_ids[shuffle_index]
+                len_rewards = len_rewards[shuffle_index]
+                correctness_rewards = correctness_rewards[shuffle_index]
+                concept_token_probs = concept_token_probs[shuffle_index]
+                concept_token_indices = concept_token_indices[shuffle_index]
 
                 print(rank, 'correctness rate: ', correctness_rate)
                 writer.add_scalar('correctness_rate/train', correctness_rate, step)
@@ -241,15 +256,15 @@ def train():
                 # attention: the end are all trauncated
                 concept_token_probs = concept_token_probs[:, :-1]
                 concept_token_indices = concept_token_indices[:, :-1]
-                res = res[:, 0:]
                 res_probs = res_probs[:, 0:]
 
-            if acc_check_only:
+            if True:
                 continue
 
             # training
             print(rank, 'start training')
             model.train()
+            gater.train()
 
             accumulated_steps = 0
 
@@ -275,6 +290,10 @@ def train():
                                 ).transpose(-2, -1)
                                 * concept_token_probs[i:end].unsqueeze(-2)
                             ).sum(dim=-1)
+                            if enable_gating:
+                                soft_embeds = gater(
+                                    soft_embeds, model.model.model.embed_tokens(res[i:end, :-1])
+                                )
                             embeds = torch.cat(
                                 [
                                     embeds[:, : input_ids.shape[1]],
@@ -288,7 +307,7 @@ def train():
                                 use_cache=False,
                                 output_hidden_states=False,
                                 return_dict=True,
-                            ).logits
+                            ).logits.float()
 
                             """
                             loss = lossf(
@@ -300,7 +319,7 @@ def train():
                             """
 
                             # compute loss
-                            target = res[i:end]
+                            target = res[i:end, 0:]
                             target[target >= logits.shape[-1]] = 0
                             new_probs = (
                                 F.log_softmax(
