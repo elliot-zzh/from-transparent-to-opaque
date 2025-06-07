@@ -49,7 +49,8 @@ def sampler(
     # tokenize
     problem_batch_size = input_ids.shape[0]
     cache_pos = torch.arange(input_ids.shape[1], dtype=torch.int, device=device)
-    kv_cache = SinkCache(window_length=1024, num_sink_tokens=4)
+    # kv_cache = SinkCache(window_length=1280, num_sink_tokens=4)
+    kv_cache = DynamicCache()
 
     # prefill the problem
     with accelerator.autocast():
@@ -60,7 +61,7 @@ def sampler(
             kv_cache=kv_cache,
         )[:, -1:].float()
 
-    concept_token_probs = torch.Tensor(problem_batch_size, 0, concept_topk).to(device)
+    concept_token_probs = torch.Tensor(problem_batch_size, 0, concept_topk).float().to(device)
     concept_token_indices = (
         torch.Tensor(problem_batch_size, 0, concept_topk).int().to(device)
     )

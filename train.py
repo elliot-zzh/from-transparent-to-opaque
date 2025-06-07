@@ -438,7 +438,7 @@ def train():
                     step_optimizer()
                     zero_grad_optimizer()
 
-                print(rank, f'Step {step}, Loss: {loss.item():.3f}')
+                print(rank, f'Step {step}, Loss: {loss.item():.8f}')
                 writer.add_scalar('loss/train', loss.item(), step)
 
                 step += 1
