@@ -55,9 +55,10 @@ from parameters import (
     enable_gating_bonus,
     enable_hidden_updating,
     gating_bonus_mode,
-    enable_gating,
+    enable_swapping,
+    self_distillation_factor,
 )
-from sampler import sampler
+from sampler import sampler, swap
 from utils import cleanup
 import os
 
@@ -97,9 +98,13 @@ def norm(x: torch.Tensor) -> torch.Tensor:
     x = x - x.mean()
     return x / (x**2).mean() * 0.5
 
+def kl_divergence(p: torch.Tensor, q_logits: torch.Tensor, eps: float=1e-10):
+    return (p * (torch.log(p + eps) - torch.log_softmax(q_logits, dim=-1))).sum(dim=-1)
+
 
 linear_interpl = torch.jit.script(linear_interpl)
 norm = torch.jit.script(norm)
+kl_divergence = torch.jit.script(kl_divergence)
 
 
 def train():
@@ -266,11 +271,7 @@ def train():
                     ]
                     mask = mask[:, :max_train_length]
                     res_probs = res_probs[:, : max_train_length - input_ids.shape[1]]
-
-                # attention: the end are all trauncated
-                concept_token_probs = concept_token_probs[:, :-1]
-                concept_token_indices = concept_token_indices[:, :-1]
-                res_probs = res_probs[:, 0:]
+                    concept_mask = concept_mask[:, : max_train_length - input_ids.shape[1]]
 
             if acc_check_only:
                 continue
@@ -297,19 +298,19 @@ def train():
                             else res.shape[0]
                         )
                         with accelerator.autocast():
-                            embeds = model.model.model.embed_tokens(input_ids[i:end])
+                            problem_embeds = model.model.model.embed_tokens(input_ids[i:end])
                             soft_embeds = (
                                 model.model.model.embed_tokens(
-                                    concept_token_indices[i:end]
+                                    concept_token_indices[i:end, :-1]
                                 ).transpose(-2, -1)
-                                * concept_token_probs[i:end].unsqueeze(-2)
+                                * concept_token_probs[i:end, :-1].unsqueeze(-2)
                             ).sum(dim=-1)
                             original_embeds = model.model.model.embed_tokens(
                                 res[i:end, :-1]
                             )
                             embeds = torch.cat(
                                 [
-                                    embeds[:, : input_ids.shape[1]],
+                                    problem_embeds[:, : input_ids.shape[1]],
                                     soft_embeds * concept_mask[i:end, :-1].unsqueeze(-1)
                                     + original_embeds
                                     * (1 - concept_mask[i:end, :-1]).unsqueeze(-1),
@@ -324,17 +325,8 @@ def train():
                                 return_dict=True,
                             ).logits.float()
 
-                            """
-                            loss = lossf(
-                                logits[:, input_ids.shape[1] - 1 :].transpose(1, 2),
-                                seqs[i:end, input_ids.shape[1] :].masked_fill(
-                                    mask[i:end, input_ids.shape[1] :] == 0, -100
-                                ),
-                            )
-                            """
-
-                            # compute loss
-                            target = res[i:end, 0:]
+                            # compute DAPO loss
+                            target = res[i:end, 1:]
                             target[target >= logits.shape[-1]] = 0
                             new_probs = (
                                 F.log_softmax(
@@ -343,13 +335,13 @@ def train():
                                 .gather(-1, target.unsqueeze(-1))
                                 .squeeze(-1)
                             )
-                            loss = torch.exp(new_probs - res_probs[i:end])
+                            loss = torch.exp(new_probs - res_probs[i:end, 1:])
                             clipped = torch.clamp(loss, 1 - clip_high, 1 + clip_low)
                             clipped *= rewards[i:end].unsqueeze(-1)
                             loss = torch.min(
                                 loss * rewards[i:end].unsqueeze(-1), clipped
                             )
-                            loss *= mask[i:end, input_ids.shape[1] :]
+                            loss *= mask[i:end, input_ids.shape[1] + 1:]
                             dapo_loss = loss = (
                                 (loss.sum(dim=-1))
                                 / (text_end_indices[i:end] + 1).sum()
@@ -357,90 +349,12 @@ def train():
                                     -1
                                 )  # here we want to maximaize it, aligned with DAPO target
                             )
-
-                            # compute hidden regularization
-                            """
-                            new_compressed_hidden = vae(
-                                hidden[:, input_ids.shape[1] - 1 : -1], compressing=True
-                            )
-                            if enable_hidden_regularization:
-                                new_processed_hidden = vae.uncompress(
-                                    new_compressed_hidden
-                                )
-                                if looping_depth > 0:  # deep looping
-                                    for depth_i in range(looping_depth):
-                                        for layer_i in range(
-                                            depth_start_layer_num, hidden_layer_num
-                                        ):
-                                            last_hidden = model_forward(
-                                                hidden_state=new_processed_hidden,
-                                                attn_mask=mask[
-                                                    i:end, input_ids.shape[1] - 1 : -1
-                                                ],
-                                                pos=hidden_pos,
-                                                start_layer=depth_start_layer_num,
-                                                end_layer=hidden_layer_num,
-                                            )
-
-                                new_processed_hidden, gate = gater.forward_hidden(
-                                    new_processed_hidden,
-                                    embeds[:, input_ids.shape[1] :],
-                                )
-                                processed_hidden, _ = gater.forward_hidden(
-                                    last_hidden, embeds[:, input_ids.shape[1] :]
-                                )
-                                hidden_loss = (
-                                    hidden_regularizer(
-                                        new_processed_hidden, processed_hidden
-                                    ).mean(dim=-1)
-                                    * mask[i:end, input_ids.shape[1] : -1]
-                                )
-                                if enable_length_reg_bonus:
-                                    hidden_loss = hidden_loss * linear_interpl(
-                                        (text_end_indices + 1)[i:end],
-                                        hidden_reg_len_bonus_a,
-                                        max_sample_length,
-                                        1,
-                                        hidden_reg_len_bonus_high,
-                                    ).unsqueeze(1)
-                                hidden_loss = (
-                                    hidden_loss.mean() * hidden_regularization_rate
-                                )
-                                loss += hidden_loss
-                                """
-
-                            if False:
-                                # apply gating value bonus
-                                gate_bonus = (
-                                    torch.exp(
-                                        gating_value_lambda
-                                        * (0.5 - torch.abs(gate)) ** 2
-                                    ).mean()
-                                    if gating_bonus_mode == 'exp'
-                                    else -1 * (gate**2).mean()
-                                )
-                                gate_bonus = (
-                                    gate_bonus
-                                    * gating_value_bonus
-                                    * gating_value_decay
-                                    ** (step // gating_bonus_update_step)
-                                )
-                                loss += gate_bonus
-
-                            loss *= (end - i) / gradient_accumulation_steps
-
-                            # randomly update hidden cache
-                            if False:
-                                with torch.no_grad():
-                                    update_index = torch.nonzero(
-                                        torch.randn(
-                                            hidden_cache.shape[1], device=device
-                                        )
-                                        < hidden_updating_rate
-                                    )
-                                    hidden_cache[i:end][:, update_index] = (
-                                        new_compressed_hidden[:, update_index]
-                                    )
+                            if enable_swapping:
+                                self_distillation_loss = kl_divergence(concept_token_probs[i:end, 1:], logits.gather(-1, concept_token_indices[i:end, :-1]))
+                                self_distillation_loss *= concept_mask[i:end, 1 :]
+                                self_distillation_loss = (self_distillation_loss.sum(dim=-1) / concept_mask[i:end, 1:].sum()) * rewards[i:end]
+                                self_distillation_loss = self_distillation_loss.sum()
+                                loss += self_distillation_factor * self_distillation_loss
 
                         accelerator.backward(loss)
                         accumulated_steps += 1

@@ -4,7 +4,6 @@ import matplotlib.pyplot as plt
 from parameters import (
     double_gate,
     enbale_injection_scale,
-    enable_gating,
 )
 
 

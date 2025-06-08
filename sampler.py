@@ -12,7 +12,7 @@ from parameters import (
     hidden_layer_num,
     depth_start_layer_num,
     hidden_dropout_rate,
-    enable_gating,
+    enable_swapping,
 )
 from model import im_end, eot, gater, model, accelerator
 from utils import cleanup
@@ -38,6 +38,11 @@ def pad_up(tensor: torch.Tensor, dim: int, target: int, filling=0) -> torch.Tens
     pad = [0] * (2 * tensor.dim())
     pad[-(2 * dim + 1)] = pad_size
     return F.pad(tensor, pad, mode='constant', value=filling)
+
+def swap(x: torch.Tensor, indices1: torch.Tensor, indices2: torch.Tensor, dim: int):
+    tmp = x.gather(dim, indices1).clone()
+    x = torch.scatter(x, index=indices1, dim=dim, src=x.gather(dim, indices2))
+    return torch.scatter(x, index=indices2, dim=dim, src=tmp)
 
 
 def sampler(
@@ -125,6 +130,9 @@ def sampler(
             concept_probs = F.softmax(logits / concept_temperature, dim=-1)
             concept_probs = concept_probs.gather(-1, topk_indices)
             concept_probs /= concept_probs.sum(dim=-1, keepdim=True)
+            max_indices = torch.argmax(concept_probs, dim=-1)
+            if enable_swapping: # swapping
+                concept_probs = swap(concept_probs, max_indices.unsqueeze(-1), selected_choice.unsqueeze(-1), dim=-1)
             concept_token_probs = torch.cat([concept_token_probs, concept_probs], dim=1)
             concept_token_indices = torch.cat(
                 [concept_token_indices, topk_indices], dim=1
