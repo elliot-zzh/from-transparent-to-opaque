@@ -1,37 +1,27 @@
-# A lot of hacking here. For details refer to
-# https://github.com/huggingface/transformers/blob/main/src/transformers/models/llama/
-# https://github.com/huggingface/transformers/blob/main/src/transformers/models/qwen2/
-# https://github.com/huggingface/transformers/blob/main/src/transformers/models/qwen3/
-from config import device
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
-from transformers import DynamicCache, SinkCache
 from tqdm import tqdm
+from transformers import DynamicCache
+
+from config import device
+from forward import model_forward
+from model import accelerator, eot, gater, im_end, model
 from parameters import (
-    hidden_layer_num,
-    depth_start_layer_num,
-    hidden_dropout_rate,
     enable_swapping,
 )
-from model import im_end, eot, gater, model, accelerator
 from utils import cleanup
-from forward import model_forward
-import pandas as pd
 
 
+@torch.compile
 def safe_entropy(logits, eps=1e-10):
-    # Compute entropy: -sum(p * log(p))
     log_probs = torch.log_softmax(logits, dim=-1)
     probs = torch.softmax(logits, dim=-1)
     entropy = -torch.sum(probs * log_probs, dim=-1)
     return entropy
 
 
+@torch.compile
 def pad_up(tensor: torch.Tensor, dim: int, target: int, filling=0) -> torch.Tensor:
-    assert tensor.shape[dim] <= target, (
-        'Target size must be greater than or equal to the current size.'
-    )
     pad_size = target - tensor.shape[dim]
     if pad_size == 0:
         return tensor
@@ -39,12 +29,15 @@ def pad_up(tensor: torch.Tensor, dim: int, target: int, filling=0) -> torch.Tens
     pad[-(2 * dim + 1)] = pad_size
     return F.pad(tensor, pad, mode='constant', value=filling)
 
+
+@torch.compile
 def swap(x: torch.Tensor, indices1: torch.Tensor, indices2: torch.Tensor, dim: int):
     tmp = x.gather(dim, indices1).clone()
     x = torch.scatter(x, index=indices1, dim=dim, src=x.gather(dim, indices2))
     return torch.scatter(x, index=indices2, dim=dim, src=tmp)
 
 
+@accelerator.autocast
 def sampler(
     input_ids,
     attn_mask,
@@ -98,58 +91,56 @@ def sampler(
         if i % gc_interval == 0:
             cleanup()
 
-        with accelerator.autocast():
-            sample_probs = F.softmax(logits / temperature, dim=-1)
-            sample_probs, topk_indices = torch.topk(
-                sample_probs, topk, largest=True, sorted=False, dim=-1
-            )
+        sample_probs = F.softmax(logits / temperature, dim=-1)
+        sample_probs, topk_indices = torch.topk(
+            sample_probs, topk, largest=True, sorted=False, dim=-1
+        )
 
-            # sampling the token
-            selected_choice = torch.multinomial(
-                sample_probs.view(problem_batch_size, -1), num_samples=1
-            )
-            selected_index = topk_indices.view(problem_batch_size, -1).gather(
-                1, selected_choice
-            )
-            raw_probs = F.log_softmax(
-                logits, dim=-1
-            )  # without temperature, for training
-            selected_probs = raw_probs.view(problem_batch_size, -1).gather(
-                1, selected_index
-            )
-            selected_index[(1 - text_end_mask).bool(), :] = eot
-            selected_probs[(1 - text_end_mask).bool(), :] = 1e6  # mask out
-            res = torch.cat([res, selected_index], dim=1)
-            res_probs = torch.cat([res_probs, selected_probs], dim=1)
-            selected_index = selected_index.view(problem_batch_size)
+        # sampling the token
+        selected_choice = torch.multinomial(
+            sample_probs.view(problem_batch_size, -1), num_samples=1
+        )
+        selected_index = topk_indices.view(problem_batch_size, -1).gather(
+            1, selected_choice
+        )
+        raw_probs = F.log_softmax(logits, dim=-1)  # without temperature, for training
+        selected_probs = raw_probs.view(problem_batch_size, -1).gather(
+            1, selected_index
+        )
+        selected_index[(1 - text_end_mask).bool(), :] = eot
+        selected_probs[(1 - text_end_mask).bool(), :] = 1e6  # mask out
+        res = torch.cat([res, selected_index], dim=1)
+        res_probs = torch.cat([res_probs, selected_probs], dim=1)
+        selected_index = selected_index.view(problem_batch_size)
 
-            # for concept token
-            concept_mask = torch.cat(
-                [concept_mask, (highH_count < entropy_k).int().unsqueeze(-1)], dim=-1
+        # for concept token
+        concept_mask = torch.cat(
+            [concept_mask, (highH_count < entropy_k).int().unsqueeze(-1)], dim=-1
+        )
+        concept_probs = F.softmax(logits / concept_temperature, dim=-1)
+        concept_probs = concept_probs.gather(-1, topk_indices)
+        concept_probs /= concept_probs.sum(dim=-1, keepdim=True)
+        max_indices = torch.argmax(concept_probs, dim=-1)
+        if enable_swapping:  # swapping
+            concept_probs = swap(
+                concept_probs,
+                max_indices.unsqueeze(-1),
+                selected_choice.unsqueeze(-1),
+                dim=-1,
             )
-            concept_probs = F.softmax(logits / concept_temperature, dim=-1)
-            concept_probs = concept_probs.gather(-1, topk_indices)
-            concept_probs /= concept_probs.sum(dim=-1, keepdim=True)
-            max_indices = torch.argmax(concept_probs, dim=-1)
-            if enable_swapping: # swapping
-                concept_probs = swap(concept_probs, max_indices.unsqueeze(-1), selected_choice.unsqueeze(-1), dim=-1)
-            concept_token_probs = torch.cat([concept_token_probs, concept_probs], dim=1)
-            concept_token_indices = torch.cat(
-                [concept_token_indices, topk_indices], dim=1
-            )
-            soft_embeds = (
-                model.model.model.embed_tokens(topk_indices).transpose(-2, -1)
-                * concept_probs.unsqueeze(-2)
-            ).sum(dim=-1)
-            original_embeds = model.model.model.embed_tokens(
-                selected_index.unsqueeze(-1)
-            )
-            embeds = original_embeds * (1 - concept_mask[:, -1:]).unsqueeze(
-                -1
-            ) + soft_embeds * concept_mask[:, -1:].unsqueeze(-1)
-            highH_count += (
-                safe_entropy(logits).view(problem_batch_size) > entropy_tao
-            ).int()
+        concept_token_probs = torch.cat([concept_token_probs, concept_probs], dim=1)
+        concept_token_indices = torch.cat([concept_token_indices, topk_indices], dim=1)
+        soft_embeds = (
+            model.model.model.embed_tokens(topk_indices).transpose(-2, -1)
+            * concept_probs.unsqueeze(-2)
+        ).sum(dim=-1)
+        original_embeds = model.model.model.embed_tokens(selected_index.unsqueeze(-1))
+        embeds = original_embeds * (1 - concept_mask[:, -1:]).unsqueeze(
+            -1
+        ) + soft_embeds * concept_mask[:, -1:].unsqueeze(-1)
+        highH_count += (
+            safe_entropy(logits).view(problem_batch_size) > entropy_tao
+        ).int()
 
         if not gen_all_done and im_end in selected_index:
             text_end_mask.masked_fill_(selected_index == im_end, 0)
@@ -165,13 +156,12 @@ def sampler(
 
         # forward
         cache_pos = cache_pos[-1:] + 1
-        with accelerator.autocast():
-            logits = model_forward(
-                embeds,
-                attn_mask=attn_mask,
-                pos=cache_pos,
-                kv_cache=kv_cache,
-            ).float()
+        logits = model_forward(
+            embeds,
+            attn_mask=attn_mask,
+            pos=cache_pos,
+            kv_cache=kv_cache,
+        ).float()
 
     cleanup()
 
@@ -186,6 +176,7 @@ def sampler(
     attn_mask = pad_up(
         attn_mask, filling=0, dim=1, target=input_ids.shape[1] + max_length
     )
+    concept_mask = pad_up(concept_mask, filling=0, dim=1, target=max_length)
 
     # entropy = entropy.transpose(0, 1).cpu().numpy()
     # pd.DataFrame(entropy, columns=[f'Col{j+1}' for j in range(entropy.shape[1])]).to_csv('entropy.csv', index=False)

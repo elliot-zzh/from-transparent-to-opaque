@@ -1,66 +1,51 @@
 import torch
-from tqdm import tqdm
+
+torch.manual_seed(42)
+import os
+
 import torch.nn.functional as F
+from tqdm import tqdm
+
 from config import device
-from utils import tokenize
+from data import data_train, verifier
 from model import (
-    model,
-    writer,
     accelerator,
     gater,
+    model,
     optimizers,
     # gater_scheduler,
     tokenizer,
-    hidden_regularizer,
+    writer,
 )
-from data import data_train, verifier
 from parameters import (
-    max_train_length,
     acc_check_only,
-    max_sample_length,
-    l_cache_length,
-    sample_num,
-    sample_problem_batch,
-    corr_reward,
-    looping_depth,
+    batch_size,
+    clip_high,
+    clip_low,
     concept_temperature,
     concept_temperature_increase_step,
     concept_temperature_max,
+    corr_reward,
+    enable_swapping,
     entropy_k,
     entropy_tao,
+    gradient_accumulation_steps,
+    l_cache_length,
+    max_sample_length,
+    max_train_length,
+    num_epochs,
+    sample_num,
+    sample_problem_batch,
+    sample_problem_sub_batch,
     sample_temperature,
     sample_topk,
-    sample_problem_sub_batch,
-    total_steps,
-    batch_size,
-    hidden_dropout_rate,
-    depth_start_layer_num,
-    hidden_layer_num,
-    train_gc_interval,
-    num_epochs,
-    hidden_reg_len_bonus_a,
-    hidden_reg_len_bonus_high,
-    gating_value_lambda,
-    hidden_regularization_rate,
-    gating_value_bonus,
-    gating_value_decay,
-    gating_bonus_update_step,
-    hidden_updating_rate,
     save_interval,
-    clip_high,
-    clip_low,
-    gradient_accumulation_steps,
-    enable_hidden_regularization,
-    enable_length_reg_bonus,
-    enable_gating_bonus,
-    enable_hidden_updating,
-    gating_bonus_mode,
-    enable_swapping,
     self_distillation_factor,
+    total_steps,
+    train_gc_interval,
 )
-from sampler import sampler, swap
-from utils import cleanup
-import os
+from sampler import sampler
+from utils import cleanup, tokenize
 
 rank = os.environ['CUDA_VISIBLE_DEVICES']
 
@@ -98,7 +83,8 @@ def norm(x: torch.Tensor) -> torch.Tensor:
     x = x - x.mean()
     return x / (x**2).mean() * 0.5
 
-def kl_divergence(p: torch.Tensor, q_logits: torch.Tensor, eps: float=1e-10):
+
+def kl_divergence(p: torch.Tensor, q_logits: torch.Tensor, eps: float = 1e-10):
     return (p * (torch.log(p + eps) - torch.log_softmax(q_logits, dim=-1))).sum(dim=-1)
 
 
@@ -121,6 +107,10 @@ def train():
             problem_attn_mask = problem_attn_mask.to(device)
             cleanup()
             with torch.no_grad():
+                # Initialize result tensors to None before accumulation
+                res = res_probs = text_end_indices = mask = concept_token_probs = (
+                    concept_token_indices
+                ) = concept_mask = None
                 for i in range(0, sample_problem_batch, sample_problem_sub_batch):
                     concept_temperature_ = concept_temperature * min(
                         concept_temperature_max,
@@ -155,7 +145,7 @@ def train():
                             entropy_tao=entropy_tao,
                         )
                         res = torch.cat([res, res_], dim=0)
-                        res_probs = torch.cat([res, res_probs_], dim=0)
+                        res_probs = torch.cat([res_probs, res_probs_], dim=0)
                         concept_token_probs = torch.cat(
                             [concept_token_probs, concept_token_probs_], dim=0
                         )
@@ -271,7 +261,9 @@ def train():
                     ]
                     mask = mask[:, :max_train_length]
                     res_probs = res_probs[:, : max_train_length - input_ids.shape[1]]
-                    concept_mask = concept_mask[:, : max_train_length - input_ids.shape[1]]
+                    concept_mask = concept_mask[
+                        :, : max_train_length - input_ids.shape[1]
+                    ]
 
             if acc_check_only:
                 continue
@@ -298,7 +290,9 @@ def train():
                             else res.shape[0]
                         )
                         with accelerator.autocast():
-                            problem_embeds = model.model.model.embed_tokens(input_ids[i:end])
+                            problem_embeds = model.model.model.embed_tokens(
+                                input_ids[i:end]
+                            )
                             soft_embeds = (
                                 model.model.model.embed_tokens(
                                     concept_token_indices[i:end, :-1]
@@ -341,7 +335,7 @@ def train():
                             loss = torch.min(
                                 loss * rewards[i:end].unsqueeze(-1), clipped
                             )
-                            loss *= mask[i:end, input_ids.shape[1] + 1:]
+                            loss *= mask[i:end, input_ids.shape[1] + 1 :]
                             dapo_loss = loss = (
                                 (loss.sum(dim=-1))
                                 / (text_end_indices[i:end] + 1).sum()
@@ -350,11 +344,21 @@ def train():
                                 )  # here we want to maximaize it, aligned with DAPO target
                             )
                             if enable_swapping:
-                                self_distillation_loss = kl_divergence(concept_token_probs[i:end, 1:], logits.gather(-1, concept_token_indices[i:end, :-1]))
-                                self_distillation_loss *= concept_mask[i:end, 1 :]
-                                self_distillation_loss = (self_distillation_loss.sum(dim=-1) / concept_mask[i:end, 1:].sum()) * rewards[i:end]
+                                self_distillation_loss = kl_divergence(
+                                    concept_token_probs[i:end, 1:],
+                                    logits.gather(
+                                        -1, concept_token_indices[i:end, :-1]
+                                    ),
+                                )
+                                self_distillation_loss *= concept_mask[i:end, 1:]
+                                self_distillation_loss = (
+                                    self_distillation_loss.sum(dim=-1)
+                                    / concept_mask[i:end, 1:].sum()
+                                ) * rewards[i:end]
                                 self_distillation_loss = self_distillation_loss.sum()
-                                loss += self_distillation_factor * self_distillation_loss
+                                loss += (
+                                    self_distillation_factor * self_distillation_loss
+                                )
 
                         accelerator.backward(loss)
                         accumulated_steps += 1

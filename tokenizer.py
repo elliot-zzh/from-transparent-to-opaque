@@ -1,4 +1,5 @@
 from transformers import AutoTokenizer
+
 from config import model_name
 from parameters import enable_thinking
 

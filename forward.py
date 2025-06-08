@@ -1,5 +1,4 @@
 from model import model
-import torch
 
 
 def model_forward(

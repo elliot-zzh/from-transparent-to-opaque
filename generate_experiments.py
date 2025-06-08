@@ -1,7 +1,8 @@
-import toml
+import copy
 import os
 import sys
-import copy
+
+import toml
 
 
 def generate_single_param_configs(original_config, param_name, param_values):
