@@ -5,14 +5,13 @@ from transformers import DynamicCache
 
 from config import device
 from forward import model_forward
-from model import accelerator, eot, gater, im_end, model
+from model import accelerator, eot, im_end, model
 from parameters import (
     enable_swapping,
 )
 from utils import cleanup
 
 
-@torch.compile
 def safe_entropy(logits, eps=1e-10):
     log_probs = torch.log_softmax(logits, dim=-1)
     probs = torch.softmax(logits, dim=-1)
@@ -37,7 +36,7 @@ def swap(x: torch.Tensor, indices1: torch.Tensor, indices2: torch.Tensor, dim: i
     return torch.scatter(x, index=indices2, dim=dim, src=tmp)
 
 
-@accelerator.autocast
+@accelerator.autocast()
 def sampler(
     input_ids,
     attn_mask,
@@ -50,7 +49,6 @@ def sampler(
     gc_interval=48,
 ):
     model.eval()
-    gater.eval()
 
     # tokenize
     problem_batch_size = input_ids.shape[0]

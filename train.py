@@ -10,10 +10,8 @@ from config import device
 from data import data_train, verifier
 from model import (
     accelerator,
-    gater,
     model,
     optimizers,
-    # gater_scheduler,
     tokenizer,
     writer,
 )
@@ -59,8 +57,7 @@ def save_model(steps):
 def step_optimizer():
     for optim in optimizers:
         optim.step()
-    # gater_scheduler.step()
-
+\
 
 def zero_grad_optimizer():
     for optim in optimizers:
@@ -271,7 +268,6 @@ def train():
             # training
             print(rank, 'start training')
             model.train()
-            gater.train()
 
             accumulated_steps = 0
 

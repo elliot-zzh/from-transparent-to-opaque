@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-from gates import Gate
 from peft import LoraConfig, get_peft_model
 from torch.optim import Adam, AdamW
 from torch.utils.tensorboard import SummaryWriter
