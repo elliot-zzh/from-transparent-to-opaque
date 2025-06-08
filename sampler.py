@@ -47,8 +47,8 @@ def sampler(
     concept_temperature=0.1,
     topk=16,
     max_length=2048,
-    entropy_tao=0.5, # refer to 2505.15778
-    entropy_k=256, # refer to 2505.15778
+    entropy_tao=0.5,  # refer to 2505.15778
+    entropy_k=256,  # refer to 2505.15778
     gc_interval=48,
 ):
     model.eval()
@@ -69,13 +69,11 @@ def sampler(
             kv_cache=kv_cache,
         )[:, -1:].float()
 
-    concept_token_probs = (
-        torch.Tensor(problem_batch_size, 0, topk).float().to(device)
-    )
-    concept_token_indices = (
-        torch.Tensor(problem_batch_size, 0, topk).int().to(device)
-    )
-    concept_mask = torch.Tensor(problem_batch_size, 0).int().to(device) # 1 -> not masked
+    concept_token_probs = torch.Tensor(problem_batch_size, 0, topk).float().to(device)
+    concept_token_indices = torch.Tensor(problem_batch_size, 0, topk).int().to(device)
+    concept_mask = (
+        torch.Tensor(problem_batch_size, 0).int().to(device)
+    )  # 1 -> not masked
     highH_count = torch.zeros(problem_batch_size).int().to(device)
 
     # text_end_appeared = False # if the first <｜end▁of▁sentence｜>
@@ -97,7 +95,9 @@ def sampler(
 
         with accelerator.autocast():
             sample_probs = F.softmax(logits / temperature, dim=-1)
-            sample_probs, topk_indices = torch.topk(sample_probs, topk, largest=True, sorted=False, dim=-1)
+            sample_probs, topk_indices = torch.topk(
+                sample_probs, topk, largest=True, sorted=False, dim=-1
+            )
 
             # sampling the token
             selected_choice = torch.multinomial(
@@ -106,7 +106,9 @@ def sampler(
             selected_index = topk_indices.view(problem_batch_size, -1).gather(
                 1, selected_choice
             )
-            raw_probs = F.log_softmax(logits, dim=-1)  # without temperature, for training
+            raw_probs = F.log_softmax(
+                logits, dim=-1
+            )  # without temperature, for training
             selected_probs = raw_probs.view(problem_batch_size, -1).gather(
                 1, selected_index
             )
@@ -117,7 +119,9 @@ def sampler(
             selected_index = selected_index.view(problem_batch_size)
 
             # for concept token
-            concept_mask = torch.cat([concept_mask, (highH_count < entropy_k).int().unsqueeze(-1)], dim=-1)
+            concept_mask = torch.cat(
+                [concept_mask, (highH_count < entropy_k).int().unsqueeze(-1)], dim=-1
+            )
             concept_probs = F.softmax(logits / concept_temperature, dim=-1)
             concept_probs = concept_probs.gather(-1, topk_indices)
             concept_probs /= concept_probs.sum(dim=-1, keepdim=True)
@@ -129,9 +133,15 @@ def sampler(
                 model.model.model.embed_tokens(topk_indices).transpose(-2, -1)
                 * concept_probs.unsqueeze(-2)
             ).sum(dim=-1)
-            original_embeds = model.model.model.embed_tokens(selected_index.unsqueeze(-1))
-            embeds = original_embeds * (1 - concept_mask[:, -1:]).unsqueeze(-1) + soft_embeds * concept_mask[:, -1:].unsqueeze(-1)
-            highH_count += (safe_entropy(logits).view(problem_batch_size) > entropy_tao).int()
+            original_embeds = model.model.model.embed_tokens(
+                selected_index.unsqueeze(-1)
+            )
+            embeds = original_embeds * (1 - concept_mask[:, -1:]).unsqueeze(
+                -1
+            ) + soft_embeds * concept_mask[:, -1:].unsqueeze(-1)
+            highH_count += (
+                safe_entropy(logits).view(problem_batch_size) > entropy_tao
+            ).int()
 
         if not gen_all_done and im_end in selected_index:
             text_end_mask.masked_fill_(selected_index == im_end, 0)
@@ -179,4 +189,5 @@ def sampler(
         attn_mask,
         concept_token_probs,
         concept_token_indices,
+        concept_mask,
     )

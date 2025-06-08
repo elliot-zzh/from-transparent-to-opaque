@@ -132,6 +132,7 @@ def train():
                             mask_,
                             concept_token_probs_,
                             concept_token_indices_,
+                            concept_mask_,
                         ) = sampler(
                             input_ids[
                                 i * sample_num : (i + sample_problem_sub_batch)
@@ -160,6 +161,7 @@ def train():
                             [text_end_indices, text_end_indices_], dim=0
                         )
                         mask = torch.cat([mask, mask_], dim=0)
+                        concept_mask = torch.cat([concept_mask, concept_mask_], dim=0)
                     else:
                         (
                             res,
@@ -168,6 +170,7 @@ def train():
                             mask,
                             concept_token_probs,
                             concept_token_indices,
+                            concept_mask,
                         ) = sampler(
                             input_ids[: sample_problem_sub_batch * sample_num],
                             problem_attn_mask[: sample_problem_sub_batch * sample_num],
@@ -188,7 +191,9 @@ def train():
                         corr_score=corr_reward,
                     )
                 ).to(device)
-                print(rank, tokenizer.batch_decode(res, skip_special_tokens=True))
+                print(
+                    rank, tokenizer.batch_decode(res[0:2], skip_special_tokens=True)
+                )  # show two outputs
                 len_rewards = text_end_indices.float() + 1
                 l = (corr_filt := correctness_rewards == corr_reward).sum()
 
@@ -299,15 +304,15 @@ def train():
                                 ).transpose(-2, -1)
                                 * concept_token_probs[i:end].unsqueeze(-2)
                             ).sum(dim=-1)
-                            if enable_gating:
-                                soft_embeds = gater(
-                                    soft_embeds,
-                                    model.model.model.embed_tokens(res[i:end, :-1]),
-                                )
+                            original_embeds = model.model.model.embed_tokens(
+                                res[i:end, :-1]
+                            )
                             embeds = torch.cat(
                                 [
                                     embeds[:, : input_ids.shape[1]],
-                                    soft_embeds,
+                                    soft_embeds * concept_mask[i:end, :-1].unsqueeze(-1)
+                                    + original_embeds
+                                    * (1 - concept_mask[i:end, :-1]).unsqueeze(-1),
                                 ],
                                 dim=1,
                             )
