@@ -26,7 +26,8 @@ from parameters import (
     concept_temperature,
     concept_temperature_increase_step,
     concept_temperature_max,
-    concept_topk,
+    entropy_k,
+    entropy_tao,
     sample_temperature,
     sample_topk,
     sample_problem_sub_batch,
@@ -144,7 +145,8 @@ def train():
                             max_length=max_sample_length,
                             temperature=sample_temperature,
                             concept_temperature=concept_temperature_,
-                            concept_topk=concept_topk,
+                            entropy_k=entropy_k,
+                            entropy_tao=entropy_tao,
                         )
                         res = torch.cat([res, res_], dim=0)
                         res_probs = torch.cat([res, res_probs_], dim=0)
@@ -172,7 +174,8 @@ def train():
                             topk=sample_topk,
                             max_length=max_sample_length,
                             concept_temperature=concept_temperature_,
-                            concept_topk=concept_topk,
+                            entropy_k=entropy_k,
+                            entropy_tao=entropy_tao,
                         )
                         init_res = True
 
