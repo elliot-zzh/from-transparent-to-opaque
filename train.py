@@ -48,7 +48,7 @@ rank = os.environ['CUDA_VISIBLE_DEVICES']
 
 
 def save_model(steps):
-    accelerator.unwrap_model(model).save_pretrained(f'./checkpoints/rank-{rank}-model-{steps}')
+    accelerator.save_model(model, f'./checkpoints/rank-{rank}-model-{steps}')
 
 def step_optimizer():
     for optim in optimizers:
@@ -104,12 +104,9 @@ def train():
                     concept_token_indices
                 ) = concept_mask = None
                 for i in range(0, sample_problem_batch, sample_problem_sub_batch):
-                    concept_temperature_ = concept_temperature * min(
-                        concept_temperature_max,
-                        concept_temperature
-                        + (concept_temperature_max - concept_temperature)
-                        / concept_temperature_increase_step
-                        * step,
+                    concept_temperature_ = torch.clamp(
+                        concept_temperature + ((concept_temperature_max - concept_temperature) / concept_temperature_increase_step) * step,
+                        max=concept_temperature_max
                     )
                     if init_res:
                         (
@@ -369,7 +366,7 @@ def train():
                     print(rank, f'Step {step}, Loss: {loss.item():.8f}')
                     writer.add_scalar('loss/train', loss.item(), step)
 
-                writer.add_saclar(
+                writer.add_scalar(
                     'loss/length', (text_end_indices + 1).float().mean().item()
                 )
 
