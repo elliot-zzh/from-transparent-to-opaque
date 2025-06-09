@@ -1,0 +1,9 @@
+modules = ["python-3.12", "bash"]
+run = "echo hello"
+
+[nix]
+channel = "stable-24_05"
+packages = ["ruff"]
+
+[deployment]
+run = ["sh", "-c", "echo hello"]

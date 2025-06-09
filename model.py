@@ -36,7 +36,7 @@ peft_config = LoraConfig(
     r=lora_r,
     lora_alpha=lora_alpha,
     target_modules='all-linear',
-    lora_dropout=0.01,
+    lora_dropout=0.05,
 )
 model = get_peft_model(model, peft_config)
 model.print_trainable_parameters()

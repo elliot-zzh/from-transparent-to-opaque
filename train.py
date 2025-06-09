@@ -37,7 +37,6 @@ from parameters import (
     sample_problem_sub_batch,
     sample_temperature,
     sample_topk,
-    save_interval,
     self_distillation_factor,
     total_steps,
     train_gc_interval,
@@ -49,15 +48,11 @@ rank = os.environ['CUDA_VISIBLE_DEVICES']
 
 
 def save_model(steps):
-    accelerator.save_model(model, f'./model/rank-{rank}-model-{steps}')
-    accelerator.save_model(vae, f'./model/rank-{rank}-vae-{steps}')
-    accelerator.save_model(gater, f'./model/rank-{rank}-gater-{steps}')
-
+    accelerator.unwrap_model(model).save_pretrained(f'./checkpoints/rank-{rank}-model-{steps}')
 
 def step_optimizer():
     for optim in optimizers:
         optim.step()
-\
 
 def zero_grad_optimizer():
     for optim in optimizers:
@@ -362,21 +357,26 @@ def train():
                         if accumulated_steps % gradient_accumulation_steps == 0:
                             step_optimizer()
                             zero_grad_optimizer()
+                            step += 1
+                            print(rank, f'Step {step}, Loss: {loss.item():.8f}')
+                            writer.add_scalar('loss/train', loss.item(), step)
 
                 if accumulated_steps % gradient_accumulation_steps != 0:
                     step_optimizer()
                     zero_grad_optimizer()
+                    step += 1
 
-                print(rank, f'Step {step}, Loss: {loss.item():.8f}')
-                writer.add_scalar('loss/train', loss.item(), step)
+                    print(rank, f'Step {step}, Loss: {loss.item():.8f}')
+                    writer.add_scalar('loss/train', loss.item(), step)
 
-                step += 1
+                writer.add_saclar(
+                    'loss/length', (text_end_indices + 1).float().mean().item()
+                )
 
                 cleanup()
 
         # Save checkpoint
-        if step % save_interval == 0:
-            save_model(step)
+        save_model(step)
 
     writer.close()
     print('all done')
