@@ -25,7 +25,7 @@ model = AutoModelForCausalLM.from_pretrained(
     torch_dtype=torch.bfloat16,
     attn_implementation='sdpa',
 )
-model.config.use_sliding_window = True
+# model.config.use_sliding_window = True
 model.gradient_checkpointing_enable()
 torch.backends.cuda.enable_flash_sdp(True)
 

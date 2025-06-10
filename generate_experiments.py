@@ -9,36 +9,32 @@ def generate_single_param_configs(original_config, param_name, param_values):
     """Generate multiple configurations by varying a single parameter."""
     configs = []
     for value in param_values:
-        # Deep copy to avoid modifying original
         new_config = copy.deepcopy(original_config)
-
-        # Navigate to nested parameter
         current_dict = new_config
         key_parts = param_name.split('.')
-
-        # Navigate to parent dict
         for part in key_parts[:-1]:
             if part not in current_dict:
                 current_dict[part] = {}
             current_dict = current_dict[part]
-
-        # Set the final value
         current_dict[key_parts[-1]] = value
         configs.append(new_config)
     return configs
 
 
-def write_configs_to_files(configs, base_filename, output_dir='configs'):
-    """Write configuration dictionaries to TOML files."""
+def write_all_configs_to_files(all_configs, output_dir='configs'):
+    """Write all configurations with globally unique IDs."""
     os.makedirs(output_dir, exist_ok=True)
     filenames = []
 
-    for i, config in enumerate(configs):
-        # Substitute rank for id = -1 in general section
-        if 'general' in config and config['general'].get('id') == -1:
-            config['general']['id'] = i
+    for i, config in enumerate(all_configs):
+        # Assign globally unique ID if not already set
+        if 'general' in config:
+            if config['general'].get('id') == -1:
+                config['general']['id'] = i
+        else:
+            config['general'] = {'id': i}
 
-        filename = os.path.join(output_dir, f'{base_filename}_{i}.toml')
+        filename = os.path.join(output_dir, f'config_{i}.toml')
         with open(filename, 'w') as f:
             toml.dump(config, f)
         print(f'Configuration written to {filename}')
@@ -128,77 +124,54 @@ def main():
         original_config['training'] = {}
     original_config['training']['total_steps'] = searching_step
 
-    # Define hyperparameters to tune one at a time
+    # Define hyperparameters to tune
     hyperparameters_to_tune = [
         {
             'param_name': 'training.config_concept_temperature',
             'param_values': [0.05, 0.1],
-            'base_filename': 'config_concept_temperature',
         },
         {
             'param_name': 'model.enable_swapping',
             'param_values': [False],
-            'base_filename': 'config_enable_swapping',
         },
         {
             'param_name': 'training.concept_topk',
             'param_values': [10, 15],
-            'base_filename': 'concept_topk',
         },
     ]
 
-    main_script_names = []
-
+    # Generate all configurations
+    all_configs = []
     for hp in hyperparameters_to_tune:
         print(f'\nProcessing hyperparameter: {hp["param_name"]}')
-
-        # Generate configurations for the current hyperparameter
         configs = generate_single_param_configs(
             original_config, hp['param_name'], hp['param_values']
         )
-        filenames = write_configs_to_files(configs, hp['base_filename'])
+        all_configs.extend(configs)
 
-        base_filename = hp['base_filename']
-        sub_script_names = []
+    # Write all configs with globally unique IDs
+    all_config_files = write_all_configs_to_files(all_configs)
 
-        # Generate sub-scripts for each GPU
-        for gpu in range(gpu_num):
-            # Assign configs to this GPU using round-robin distribution
-            assigned_configs = [
-                filenames[j] for j in range(len(filenames)) if j % gpu_num == gpu
-            ]
+    # Distribute all configs across GPUs using round-robin
+    sub_script_names = []
 
-            if (
-                assigned_configs
-            ):  # Only generate sub-script if there are configs assigned
-                sub_script_name = f'train_{base_filename}_gpu{gpu}.sh'
-                generate_sub_script(sub_script_name, assigned_configs, gpu)
-                sub_script_names.append(sub_script_name)
+    for gpu in range(gpu_num):
+        assigned_configs = [
+            all_config_files[i]
+            for i in range(len(all_config_files))
+            if i % gpu_num == gpu
+        ]
+        if assigned_configs:
+            sub_script_name = f'train_gpu{gpu}.sh'
+            generate_sub_script(sub_script_name, assigned_configs, gpu)
+            sub_script_names.append(sub_script_name)
 
-        # Generate the main script for this hyperparameter
-        if sub_script_names:
-            main_script_name = f'train_{base_filename}.sh'
-            generate_main_script(main_script_name, sub_script_names)
-            main_script_names.append(main_script_name)
-
-    # Generate the overall train.sh script to run all main scripts sequentially
-    if main_script_names:
-        with open('train.sh', 'w') as f:
-            f.write('#!/bin/bash\n\n')
-            f.write('set -e  # Exit on any error\n\n')
-            f.write('echo "Starting hyperparameter search..."\n\n')
-
-            for main_script in main_script_names:
-                f.write(f'echo "Running hyperparameter sweep: {main_script}"\n')
-                f.write(f'./{main_script}\n')
-                f.write(f'echo "Completed hyperparameter sweep: {main_script}"\n\n')
-
-            f.write('echo "All hyperparameter sweeps completed"\n')
-
-        os.chmod('train.sh', 0o755)
-        print("\nOverall training script 'train.sh' generated")
+    # Generate the unified main script
+    if sub_script_names:
+        generate_main_script('train.sh', sub_script_names)
+        print("\nUnified training script 'train.sh' generated")
     else:
-        print('No scripts generated')
+        print('No configurations generated')
 
 
 if __name__ == '__main__':
