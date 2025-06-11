@@ -236,6 +236,7 @@ def train():
                         l_cache_length - len_rewards[len_interval_mask]
                     ) / (max_sample_length - l_cache_length)
                 # rewards = correctness_rewards + len_rewards # currently remove length penalty
+                rewards = correctness_rewards
                 rewards = norm(rewards)
 
                 # truncate to max_train_length if the sampled result is too long

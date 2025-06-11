@@ -53,8 +53,7 @@ def sampler(
     # tokenize
     problem_batch_size = input_ids.shape[0]
     cache_pos = torch.arange(input_ids.shape[1], dtype=torch.int, device=device)
-    kv_cache = SinkCache(window_length=4096, num_sink_tokens=1)
-    # kv_cache = DynamicCache()
+    kv_cache = DynamicCache()
 
     # prefill the problem
     with accelerator.autocast():
@@ -112,11 +111,11 @@ def sampler(
         selected_index = selected_index.view(problem_batch_size)
 
         # for concept token
-        concept_mask_ = (highH_count < entropy_k).int() * (
-            selected_choice == eoth
-        ).int()
-        concept_mask_ = concept_mask_.unsqueeze(-1) * concept_mask[:, -1:]
-        concept_mask = torch.cat([concept_mask, concept_mask], dim=-1)
+        concept_mask_ = (highH_count < entropy_k) | (selected_index == eoth)
+        concept_mask_ = concept_mask_.unsqueeze(-1).int()
+        if i > 0:
+            concept_mask_ = concept_mask_ * concept_mask[:, -1:]
+        concept_mask = torch.cat([concept_mask, concept_mask_], dim=-1)
         concept_probs = F.softmax(logits / concept_temperature, dim=-1)
         concept_probs = concept_probs.gather(-1, topk_indices)
         concept_probs /= concept_probs.sum(dim=-1, keepdim=True)

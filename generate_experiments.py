@@ -134,6 +134,10 @@ def main():
             'param_name': 'training.concept_topk',
             'param_values': [16, 20],
         },
+        {
+            'param_name': 'training.entropy_k',
+            'param_values': [1024, 256],
+        },
     ]
 
     # Generate all configurations
