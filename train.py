@@ -340,9 +340,8 @@ def train():
                             if enable_swapping:
                                 self_distillation_loss = kl_divergence(
                                     concept_token_probs[i:end, 1:],
-                                    logits.gather(
-                                        -1, concept_token_indices[i:end, :-1]
-                                    ),
+                                    logits.gather(-1, concept_token_indices[i:end, :-1])
+                                    / concept_temperature_,
                                 )
                                 self_distillation_loss *= concept_mask[i:end, 1:]
                                 self_distillation_loss = (
@@ -373,7 +372,7 @@ def train():
                     writer.add_scalar('loss/train', loss.item(), step)
 
                 writer.add_scalar(
-                    'loss/length', (text_end_indices + 1).float().mean().item()
+                    'train/length', (text_end_indices + 1).float().mean().item()
                 )
 
                 cleanup()
