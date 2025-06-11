@@ -37,6 +37,7 @@ from parameters import (
     sample_problem_sub_batch,
     sample_temperature,
     sample_topk,
+    save_interval,
     self_distillation_factor,
     total_steps,
     train_gc_interval,
@@ -47,13 +48,14 @@ from utils import cleanup, tokenize
 rank = os.environ['CUDA_VISIBLE_DEVICES']
 
 
-def save_model(steps):
-    accelerator.save_model(model, f'./checkpoints/rank-{rank}-model-{steps}')
+def save_model(steps):  # TODO: save checkpoints?
+    accelerator.save_model(model, f'./model/rank-{rank}-model-{steps}')
 
 
 def step_optimizer():
     for optim in optimizers:
         optim.step()
+    # gater_scheduler.step()
 
 
 def zero_grad_optimizer():
@@ -101,19 +103,10 @@ def train():
             problem_attn_mask = problem_attn_mask.to(device)
             cleanup()
             with torch.no_grad():
-                # Initialize result tensors to None before accumulation
                 res = res_probs = text_end_indices = mask = concept_token_probs = (
                     concept_token_indices
                 ) = concept_mask = None
                 for i in range(0, sample_problem_batch, sample_problem_sub_batch):
-                    concept_temperature_ = torch.tensor(
-                        concept_temperature
-                        + (
-                            (concept_temperature_max - concept_temperature)
-                            / concept_temperature_increase_step
-                        )
-                        * step
-                    ).clamp(max=concept_temperature_max)
                     if init_res:
                         (
                             res_,
@@ -135,7 +128,7 @@ def train():
                             topk=sample_topk,
                             max_length=max_sample_length,
                             temperature=sample_temperature,
-                            concept_temperature=concept_temperature_,
+                            concept_temperature=concept_temperature,
                             entropy_k=entropy_k,
                             entropy_tao=entropy_tao,
                         )
@@ -166,7 +159,7 @@ def train():
                             problem_attn_mask[: sample_problem_sub_batch * sample_num],
                             topk=sample_topk,
                             max_length=max_sample_length,
-                            concept_temperature=concept_temperature_,
+                            concept_temperature=concept_temperature,
                             entropy_k=entropy_k,
                             entropy_tao=entropy_tao,
                         )
@@ -242,7 +235,7 @@ def train():
                     len_rewards[len_interval_mask] = (
                         l_cache_length - len_rewards[len_interval_mask]
                     ) / (max_sample_length - l_cache_length)
-                rewards = correctness_rewards + len_rewards
+                # rewards = correctness_rewards + len_rewards # currently remove length penalty
                 rewards = norm(rewards)
 
                 # truncate to max_train_length if the sampled result is too long
@@ -341,7 +334,7 @@ def train():
                                 self_distillation_loss = kl_divergence(
                                     concept_token_probs[i:end, 1:],
                                     logits.gather(-1, concept_token_indices[i:end, :-1])
-                                    / concept_temperature_,
+                                    / concept_temperature,
                                 )
                                 self_distillation_loss *= concept_mask[i:end, 1:]
                                 self_distillation_loss = (
@@ -359,26 +352,21 @@ def train():
                         if accumulated_steps % gradient_accumulation_steps == 0:
                             step_optimizer()
                             zero_grad_optimizer()
-                            step += 1
-                            print(rank, f'Step {step}, Loss: {loss.item():.8f}')
-                            writer.add_scalar('loss/train', loss.item(), step)
 
                 if accumulated_steps % gradient_accumulation_steps != 0:
                     step_optimizer()
                     zero_grad_optimizer()
-                    step += 1
 
-                    print(rank, f'Step {step}, Loss: {loss.item():.8f}')
-                    writer.add_scalar('loss/train', loss.item(), step)
+                print(rank, f'Step {step}, Loss: {loss.item():.8f}')
+                writer.add_scalar('loss/train', loss.item(), step)
 
-                writer.add_scalar(
-                    'train/length', (text_end_indices + 1).float().mean().item()
-                )
+                step += 1
 
                 cleanup()
 
         # Save checkpoint
-        save_model(step)
+        if step % save_interval == 0:
+            save_model(step)
 
     writer.close()
     print('all done')

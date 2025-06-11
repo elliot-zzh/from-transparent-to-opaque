@@ -1,7 +1,7 @@
 import torch
 import torch.nn.functional as F
 from tqdm import tqdm
-from transformers import DynamicCache
+from transformers import DynamicCache, SinkCache
 
 from config import device
 from forward import model_forward
@@ -53,8 +53,8 @@ def sampler(
     # tokenize
     problem_batch_size = input_ids.shape[0]
     cache_pos = torch.arange(input_ids.shape[1], dtype=torch.int, device=device)
-    # kv_cache = SinkCache(window_length=1280, num_sink_tokens=4)
-    kv_cache = DynamicCache()
+    kv_cache = SinkCache(window_length=4096, num_sink_tokens=1)
+    # kv_cache = DynamicCache()
 
     # prefill the problem
     with accelerator.autocast():

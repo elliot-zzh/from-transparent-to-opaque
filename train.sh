@@ -14,8 +14,6 @@ echo "Launching train_gpu2.sh"
 ./train_gpu2.sh &
 echo "Launching train_gpu3.sh"
 ./train_gpu3.sh &
-echo "Launching train_gpu4.sh"
-./train_gpu4.sh &
 
 echo "Waiting for all GPU processes to complete..."
 wait

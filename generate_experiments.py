@@ -127,16 +127,12 @@ def main():
     # Define hyperparameters to tune
     hyperparameters_to_tune = [
         {
-            'param_name': 'training.config_concept_temperature',
-            'param_values': [0.05, 0.1],
-        },
-        {
             'param_name': 'model.enable_swapping',
             'param_values': [False],
         },
         {
             'param_name': 'training.concept_topk',
-            'param_values': [10, 15],
+            'param_values': [16, 20],
         },
     ]
 
