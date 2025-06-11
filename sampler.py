@@ -5,7 +5,7 @@ from transformers import DynamicCache, SinkCache
 
 from config import device
 from forward import model_forward
-from model import accelerator, eot, im_end, model
+from model import accelerator, eot, im_end, model, eoth
 from parameters import (
     enable_swapping,
 )
@@ -112,9 +112,11 @@ def sampler(
         selected_index = selected_index.view(problem_batch_size)
 
         # for concept token
-        concept_mask = torch.cat(
-            [concept_mask, (highH_count < entropy_k).int().unsqueeze(-1)], dim=-1
-        )
+        concept_mask_ = (highH_count < entropy_k).int() * (
+            selected_choice == eoth
+        ).int()
+        concept_mask_ = concept_mask_.unsqueeze(-1) * concept_mask[:, -1:]
+        concept_mask = torch.cat([concept_mask, concept_mask], dim=-1)
         concept_probs = F.softmax(logits / concept_temperature, dim=-1)
         concept_probs = concept_probs.gather(-1, topk_indices)
         concept_probs /= concept_probs.sum(dim=-1, keepdim=True)
