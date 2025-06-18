@@ -90,7 +90,7 @@ def sampler(
 
         sample_probs = F.softmax(logits / temperature, dim=-1)
         sample_probs, topk_indices = torch.topk(
-            sample_probs, topk, largest=True, sorted=False, dim=-1
+            sample_probs, topk if enable_swapping else 1, largest=True, sorted=False, dim=-1
         )
 
         # sampling the token
@@ -111,11 +111,7 @@ def sampler(
         selected_index = selected_index.view(problem_batch_size)
 
         # for concept token
-        concept_mask_ = (highH_count < entropy_k) | (selected_index == eoth)
-        concept_mask_ = concept_mask_.unsqueeze(-1).int()
-        if i > 0:
-            concept_mask_ = concept_mask_ * concept_mask[:, -1:]
-        concept_mask = torch.cat([concept_mask, concept_mask_], dim=-1)
+        concept_mask = torch.cat([concept_mask, (selected_index == eoth).unsqueeze(-1)], dim=-1)
         concept_probs = F.softmax(logits / concept_temperature, dim=-1)
         concept_probs = concept_probs.gather(-1, topk_indices)
         concept_probs /= concept_probs.sum(dim=-1, keepdim=True)
