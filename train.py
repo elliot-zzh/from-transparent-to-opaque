@@ -353,15 +353,15 @@ def train():
                         if accumulated_steps % gradient_accumulation_steps == 0:
                             step_optimizer()
                             zero_grad_optimizer()
+                            step += 1
 
                 if accumulated_steps % gradient_accumulation_steps != 0:
                     step_optimizer()
                     zero_grad_optimizer()
+                    step += 1
 
                 print(rank, f'Step {step}, Loss: {loss.item():.8f}')
                 writer.add_scalar('loss/train', loss.item(), step)
-
-                step += 1
 
                 cleanup()
 

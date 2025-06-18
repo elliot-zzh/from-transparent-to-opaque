@@ -131,12 +131,16 @@ def main():
             'param_values': [False],
         },
         {
-            'param_name': 'training.concept_topk',
-            'param_values': [16, 20],
+            'param_name': 'training.self_distillation_factor',
+            'param_values': [1, 0.2],
         },
         {
             'param_name': 'training.entropy_k',
-            'param_values': [1024, 256],
+            'param_values': [1024],
+        },
+        {
+            'param_name': 'model.enable_thinking',
+            'param_values': [False],
         },
     ]
 
