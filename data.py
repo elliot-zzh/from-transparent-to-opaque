@@ -11,6 +11,7 @@ from parameters import (
     sample_problem_batch,
     test_dataset_path,
     train_dataset_path,
+    enable_swapping,
 )
 from tokenizer import prompt, prompt_suffix
 
@@ -41,7 +42,7 @@ class dataset(Dataset):
         return len(self.problems) * self.sample_num
 
     def __getitem__(self, index):
-        question_index = index // self.sample_num
+        question_index = index // self.sample_num if enable_swapping else index
         return self.problems[question_index], self.answers[question_index]
 
 
