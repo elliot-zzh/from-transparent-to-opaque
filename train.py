@@ -175,7 +175,7 @@ def train():
                         corr_score=corr_reward,
                     )
                 ).to(device)
-                
+
                 len_rewards = text_end_indices.float() + 1
                 l = (corr_filt := correctness_rewards == corr_reward).sum()
 
@@ -360,7 +360,9 @@ def train():
                     step += 1
 
                 print(rank, f'Step {step}, Loss: {loss.item():.8f}')
-                writer.add_scalar('length/train', text_end_indices.mean().item() + 1, step)
+                writer.add_scalar(
+                    'length/train', text_end_indices.mean().item() + 1, step
+                )
                 writer.add_text('sample_text/train', decoded, step)
 
                 cleanup()
