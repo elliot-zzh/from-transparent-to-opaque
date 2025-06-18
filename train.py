@@ -167,16 +167,15 @@ def train():
 
                     cleanup()
 
+                decoded = tokenizer.batch_decode(res, skip_special_tokens=True)
                 correctness_rewards = torch.Tensor(
                     verifier(
-                        tokenizer.batch_decode(res, skip_special_tokens=True),
+                        decoded,
                         ans,
                         corr_score=corr_reward,
                     )
                 ).to(device)
-                print(
-                    rank, tokenizer.batch_decode(res[0:2], skip_special_tokens=True)
-                )  # show two outputs
+                
                 len_rewards = text_end_indices.float() + 1
                 l = (corr_filt := correctness_rewards == corr_reward).sum()
 
@@ -324,7 +323,7 @@ def train():
                                 loss * rewards[i:end].unsqueeze(-1), clipped
                             )
                             loss *= mask[i:end, input_ids.shape[1] + 1 :]
-                            dapo_loss = loss = (
+                            loss = (
                                 (loss.sum(dim=-1))
                                 / (text_end_indices[i:end] + 1).sum()
                                 * (
@@ -361,7 +360,8 @@ def train():
                     step += 1
 
                 print(rank, f'Step {step}, Loss: {loss.item():.8f}')
-                writer.add_scalar('loss/train', loss.item(), step)
+                writer.add_scalar('length/train', text_end_indices.mean().item() + 1, step)
+                writer.add_text('sample_text/train', decoded, step)
 
                 cleanup()
 
