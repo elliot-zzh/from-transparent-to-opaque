@@ -53,7 +53,7 @@ def sampler(
     # tokenize
     problem_batch_size = input_ids.shape[0]
     cache_pos = torch.arange(input_ids.shape[1], dtype=torch.int, device=device)
-    kv_cache = DynamicCache()
+    kv_cache = SinkCache(num_sink_tokens=512, window_length=4096)
 
     # prefill the problem
     with accelerator.autocast():
@@ -91,15 +91,19 @@ def sampler(
         sample_probs = F.softmax(logits / temperature, dim=-1)
         sample_probs, topk_indices = torch.topk(
             sample_probs,
-            topk if enable_swapping else 1,
+            topk,
             largest=True,
             sorted=False,
             dim=-1,
         )
 
         # sampling the token
-        selected_choice = torch.multinomial(
-            sample_probs.view(problem_batch_size, -1), num_samples=1
+        selected_choice = (
+            torch.multinomial(sample_probs.view(problem_batch_size, -1), num_samples=1)
+            if enable_swapping
+            else torch.argmax(
+                sample_probs.view(problem_batch_size, -1), dim=-1
+            ).unsqueeze(-1)
         )
         selected_index = topk_indices.view(problem_batch_size, -1).gather(
             1, selected_choice
@@ -116,7 +120,12 @@ def sampler(
 
         # for concept token
         concept_mask = torch.cat(
-            [concept_mask, (selected_index == eoth).unsqueeze(-1)], dim=-1
+            [
+                concept_mask,
+                (1 - (selected_index == eoth).unsqueeze(-1).int())
+                * (concept_mask[:, -1:] if i > 0 else 1),
+            ],
+            dim=-1,
         )
         concept_probs = F.softmax(logits / concept_temperature, dim=-1)
         concept_probs = concept_probs.gather(-1, topk_indices)

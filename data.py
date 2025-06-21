@@ -39,7 +39,7 @@ class dataset(Dataset):
         self.sample_num = sample_num
 
     def __len__(self):
-        return len(self.problems) * self.sample_num
+        return len(self.problems) * (self.sample_num if enable_swapping else 1)
 
     def __getitem__(self, index):
         question_index = index // self.sample_num if enable_swapping else index

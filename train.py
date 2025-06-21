@@ -80,8 +80,8 @@ def norm(x: torch.Tensor) -> torch.Tensor:
     return x / (x**2).mean() * 0.5
 
 
-def kl_divergence(p: torch.Tensor, q_logits: torch.Tensor, eps: float = 1e-10):
-    return (p * (torch.log(p + eps) - torch.log_softmax(q_logits, dim=-1))).sum(dim=-1)
+def kl_divergence(p: torch.Tensor, q: torch.Tensor, eps: float = 1e-10):
+    return (p * (torch.log(p + eps) - q)).sum(dim=-1)
 
 
 linear_interpl = torch.jit.script(linear_interpl)
@@ -304,25 +304,30 @@ def train():
                                 use_cache=False,
                                 output_hidden_states=False,
                                 return_dict=True,
-                            ).logits.float()
+                            ).logits
+                            shrunk_logits, shrunk_indices = torch.topk(
+                                logits[:, input_ids.shape[1] - 1 :],
+                                k=128,
+                                dim=-1,
+                                largest=True,
+                                sorted=False,
+                            )
+                            shrunk_logits = shrunk_logits.float()
 
                             # compute DAPO loss
-                            target = res[i:end, 1:]
+                            target = res[i:end, :]
                             target[target >= logits.shape[-1]] = 0
                             new_probs = (
-                                F.log_softmax(
-                                    logits[:, input_ids.shape[1] - 1 :], dim=-1
-                                )
-                                .gather(-1, target.unsqueeze(-1))
-                                .squeeze(-1)
-                            )
-                            loss = torch.exp(new_probs - res_probs[i:end, 1:])
+                                F.log_softmax(shrunk_logits, dim=-1)
+                                * (shrunk_indices == target.unsqueeze(-1)).float()
+                            ).sum(dim=-1)
+                            loss = torch.exp(new_probs - res_probs[i:end, :])
                             clipped = torch.clamp(loss, 1 - clip_high, 1 + clip_low)
                             clipped *= rewards[i:end].unsqueeze(-1)
                             loss = torch.min(
                                 loss * rewards[i:end].unsqueeze(-1), clipped
                             )
-                            loss *= mask[i:end, input_ids.shape[1] + 1 :]
+                            loss *= mask[i:end, input_ids.shape[1] :]
                             loss = (
                                 (loss.sum(dim=-1))
                                 / (text_end_indices[i:end] + 1).sum()
@@ -332,14 +337,19 @@ def train():
                             )
                             if enable_swapping:
                                 self_distillation_loss = kl_divergence(
-                                    concept_token_probs[i:end, 1:],
-                                    logits.gather(-1, concept_token_indices[i:end, :-1])
-                                    / concept_temperature,
+                                    concept_token_probs[i:end, :],
+                                    torch.log_softmax(
+                                        logits[:, input_ids.shape[1] - 1 :].gather(
+                                            -1, concept_token_indices[i:end, :]
+                                        )
+                                        / concept_temperature,
+                                        dim=-1,
+                                    ),
                                 )
-                                self_distillation_loss *= concept_mask[i:end, 1:]
+                                self_distillation_loss *= concept_mask[i:end, :]
                                 self_distillation_loss = (
                                     self_distillation_loss.sum(dim=-1)
-                                    / concept_mask[i:end, 1:].sum()
+                                    / concept_mask[i:end, :].sum()
                                 ) * rewards[i:end]
                                 self_distillation_loss = self_distillation_loss.sum()
                                 loss += (
@@ -361,9 +371,9 @@ def train():
 
                 print(rank, f'Step {step}, Loss: {loss.item():.8f}')
                 writer.add_scalar(
-                    'length/train', text_end_indices.mean().item() + 1, step
+                    'length/train', text_end_indices.float().mean().item() + 1, step
                 )
-                writer.add_text('sample_text/train', decoded, step)
+                writer.add_text('sample_text/train', decoded[0], step)
 
                 cleanup()
 
