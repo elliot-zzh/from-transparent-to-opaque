@@ -335,7 +335,7 @@ def train():
                                     -1
                                 )  # here we want to maximaize it, aligned with DAPO target
                             )
-                            if enable_swapping:
+                            if self_distillation_factor > 0:
                                 self_distillation_loss = kl_divergence(
                                     concept_token_probs[i:end, :],
                                     torch.log_softmax(
