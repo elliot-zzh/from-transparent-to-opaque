@@ -128,11 +128,11 @@ def main():
     hyperparameters_to_tune = [
         {
             'param_name': 'model.enable_swapping',
-            'param_values': [False], # ablation: w/o swapping
+            'param_values': [False],  # ablation: w/o swapping
         },
         {
             'param_name': 'training.self_distillation_factor',
-            'param_values': [1, 0.2, 0], # 0 -> w/o self-distillation
+            'param_values': [1, 0.2, 0],  # 0 -> w/o self-distillation
         },
         {
             'param_name': 'model.enable_thinking',
