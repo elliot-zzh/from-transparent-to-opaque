@@ -339,12 +339,12 @@ def train():
                                 self_distillation_loss = kl_divergence(
                                     concept_token_probs[i:end, :],
                                     torch.log_softmax(
-                                        logits[:, input_ids.shape[1] - 1 :].gather(
-                                            -1, concept_token_indices[i:end, :]
-                                        )
+                                        logits[:, input_ids.shape[1] - 1 :]
                                         / concept_temperature,
                                         dim=-1,
-                                    ),
+                                    ).gather(
+                                            -1, concept_token_indices[i:end, :]
+                                        ),
                                 )
                                 self_distillation_loss *= concept_mask[i:end, :]
                                 self_distillation_loss = (

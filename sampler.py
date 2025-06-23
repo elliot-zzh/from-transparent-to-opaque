@@ -128,8 +128,8 @@ def sampler(
             dim=-1,
         )
         concept_probs = F.softmax(
-            logits.gather(-1, topk_indices) / concept_temperature, dim=-1
-        )
+            logits / concept_temperature, dim=-1
+        ).gather(-1, topk_indices)
         concept_probs /= concept_probs.sum(dim=-1, keepdim=True)
         max_indices = torch.argmax(concept_probs, dim=-1)
         if enable_swapping:  # swapping
