@@ -2,7 +2,7 @@
 id = -1
 
 [training]
-num_epochs = 1
+num_epochs = 2
 total_steps = 1000
 log_interval = 1
 save_interval = 256
