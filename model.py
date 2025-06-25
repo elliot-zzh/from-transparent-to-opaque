@@ -5,7 +5,7 @@ from torch.optim import Adam, AdamW
 from torch.utils.tensorboard import SummaryWriter
 from transformers import AutoModelForCausalLM
 
-from config import accelerator, device, model_name
+from config import accelerator, device, model_name, model_path
 from data import data_train
 from parameters import (
     experiment_id,
@@ -19,12 +19,21 @@ from tokenizer import tokenizer
 writer = SummaryWriter(f'runs/experiment-{experiment_id}')
 
 # load the model
-model = AutoModelForCausalLM.from_pretrained(
-    model_name,
-    device_map=device,
-    torch_dtype=torch.bfloat16,
-    attn_implementation='sdpa',
-)
+if model_path:
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        cache_dir=model_path,
+        device_map=device,
+        torch_dtype=torch.bfloat16,
+        attn_implementation='sdpa',
+    )
+else:
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        device_map=device,
+        torch_dtype=torch.bfloat16,
+        attn_implementation='sdpa',
+    )
 # model.config.use_sliding_window = True
 # model.config.sliding_window = 4096
 model.gradient_checkpointing_enable()

@@ -1,5 +1,7 @@
 [general]
 id = -1
+model_name = "Qwen/Qwen3-1.7B"
+model_path = ""
 
 [training]
 num_epochs = 1
