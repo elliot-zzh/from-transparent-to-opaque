@@ -10,6 +10,7 @@ prompt_suffix = (
 
 tokenizer = (
     AutoTokenizer.from_pretrained(model_name, use_fast=True, cache_dir=model_path)
-    if model_path else AutoTokenizer.from_pretrained(model_name, use_fast=True)
+    if model_path
+    else AutoTokenizer.from_pretrained(model_name, use_fast=True)
 )
 tokenizer.padding_side = 'left'

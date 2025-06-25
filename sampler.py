@@ -53,7 +53,8 @@ def sampler(
     # tokenize
     problem_batch_size = input_ids.shape[0]
     cache_pos = torch.arange(input_ids.shape[1], dtype=torch.int, device=device)
-    kv_cache = SinkCache(num_sink_tokens=512, window_length=4096)
+    # kv_cache = SinkCache(num_sink_tokens=512, window_length=4096)
+    kv_cache = DynamicCache()
 
     # prefill the problem
     with accelerator.autocast():
