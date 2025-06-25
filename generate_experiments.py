@@ -142,9 +142,9 @@ def main():
     experiments = [
         {'model.enable_swapping': False},  # ablation: w/o swapping
         {'training.self_distillation_factor': 1},
+        {'training.self_distillation_factor': 0.5},
         {'training.self_distillation_factor': 0.2},
         {'training.self_distillation_factor': 0},  # 0 -> w/o self-distillation
-        {'model.enable_thinking': False},
     ]
 
     # Generate all configurations
