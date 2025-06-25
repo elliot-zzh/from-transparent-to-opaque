@@ -1,7 +1,7 @@
 [general]
 id = -1
-model_name = "Qwen/Qwen3-1.7B"
-model_path = ""
+model_name = "Qwen/Qwen3-0.6B"
+model_path = "./model/qwen3-0.6b" # should load models to this specified dir. if not specified, will use the default hf system cache
 
 [training]
 num_epochs = 2
