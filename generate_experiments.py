@@ -5,6 +5,20 @@ import sys
 import toml
 
 
+def apply_param_changes(config, param_changes):
+    """Apply a dict of param_name: value to a config dict (deep copy)."""
+    new_config = copy.deepcopy(config)
+    for param_name, value in param_changes.items():
+        current_dict = new_config
+        key_parts = param_name.split('.')
+        for part in key_parts[:-1]:
+            if part not in current_dict:
+                current_dict[part] = {}
+            current_dict = current_dict[part]
+        current_dict[key_parts[-1]] = value
+    return new_config
+
+
 def generate_single_param_configs(original_config, param_name, param_values):
     """Generate multiple configurations by varying a single parameter."""
     configs = []
@@ -124,37 +138,27 @@ def main():
         original_config['training'] = {}
     original_config['training']['total_steps'] = searching_step
 
-    # Define hyperparameters to tune
-    hyperparameters_to_tune = [
-        {
-            'param_name': 'model.enable_swapping',
-            'param_values': [False],  # ablation: w/o swapping
-        },
-        {
-            'param_name': 'training.self_distillation_factor',
-            'param_values': [1, 0.2, 0],  # 0 -> w/o self-distillation
-        },
-        {
-            'param_name': 'model.enable_thinking',
-            'param_values': [False],
-        },
+    # Define experiments: migrated from previous param grid
+    experiments = [
+        {'model.enable_swapping': False},  # ablation: w/o swapping
+        {'training.self_distillation_factor': 1},
+        {'training.self_distillation_factor': 0.2},
+        {'training.self_distillation_factor': 0},  # 0 -> w/o self-distillation
+        {'model.enable_thinking': False},
     ]
 
     # Generate all configurations
     all_configs = []
-    for hp in hyperparameters_to_tune:
-        print(f'\nProcessing hyperparameter: {hp["param_name"]}')
-        configs = generate_single_param_configs(
-            original_config, hp['param_name'], hp['param_values']
-        )
-        all_configs.extend(configs)
+    for exp in experiments:
+        print(f'Processing experiment: {exp}')
+        config = apply_param_changes(original_config, exp)
+        all_configs.append(config)
 
     # Write all configs with globally unique IDs
     all_config_files = write_all_configs_to_files(all_configs)
 
     # Distribute all configs across GPUs using round-robin
     sub_script_names = []
-
     for gpu in range(gpu_num):
         assigned_configs = [
             all_config_files[i]
