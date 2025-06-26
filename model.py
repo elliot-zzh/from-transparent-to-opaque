@@ -21,8 +21,7 @@ writer = SummaryWriter(f'runs/experiment-{experiment_id}')
 # load the model
 if model_path:
     model = AutoModelForCausalLM.from_pretrained(
-        model_name,
-        cache_dir=model_path,
+        model_path,
         device_map=device,
         torch_dtype=torch.bfloat16,
         attn_implementation='sdpa',

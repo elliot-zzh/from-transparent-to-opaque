@@ -9,7 +9,7 @@ prompt_suffix = (
 ) + ' <|im_end|><|im_start|>assistant\n'
 
 tokenizer = (
-    AutoTokenizer.from_pretrained(model_name, use_fast=True, cache_dir=model_path)
+    AutoTokenizer.from_pretrained(model_path, use_fast=True)
     if model_path
     else AutoTokenizer.from_pretrained(model_name, use_fast=True)
 )
