@@ -82,6 +82,5 @@ gater_scheduler = ChainedScheduler(
 lossf = nn.CrossEntropyLoss(reduction='none')
 hidden_regularizer = nn.MSELoss(reduction='none')
 
-# end_of_text mark
-# eot = tokenizer('<｜end▁of▁sentence｜>').input_ids[1:][0]
-im_end, eot, eoth = tokenizer('<|im_end|><|endoftext|></think>').input_ids
+eot, eoth = tokenizer('<｜end▁of▁sentence｜></think>').input_ids[1:]
+im_end = eot
