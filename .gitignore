@@ -11,3 +11,6 @@ runs/
 
 diff.diff
 vram_usage_log.csv
+
+configs/
+train_gpu*.sh

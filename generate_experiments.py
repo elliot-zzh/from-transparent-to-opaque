@@ -69,7 +69,7 @@ def generate_sub_script(sub_script_name, assigned_configs, gpu_id):
             f.write(
                 f'echo "Starting training with config: {config}"\n'
                 f'CUDA_VISIBLE_DEVICES={gpu_id} python '
-                f'train.py --config {config} --traindataset dataset/train.jsonl --testdataset dataset/test.jsonl\n'
+                f'train.py --config {config}\n'
                 f'echo "Completed training with config: {config}"\n\n'
             )
 

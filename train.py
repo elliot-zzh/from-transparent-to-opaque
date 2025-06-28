@@ -305,8 +305,8 @@ def train():
                                 output_hidden_states=False,
                                 return_dict=True,
                             ).logits
-                            
-                            '''
+
+                            """
                             shrunk_logits, shrunk_indices = torch.topk(
                                 logits[:, input_ids.shape[1] - 1 :],
                                 k=128,
@@ -315,7 +315,7 @@ def train():
                                 sorted=False,
                             )
                             shrunk_logits = shrunk_logits.float()
-                            '''
+                            """
 
                             # compute DAPO loss
                             target = res[i:end, :]

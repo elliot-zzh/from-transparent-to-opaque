@@ -17,19 +17,6 @@ parser.add_argument(
     default='config.toml',
     help='Path to the TOML configuration file',
 )
-# also for passing the path of dataset files
-parser.add_argument(
-    '--traindataset',
-    type=str,
-    default='/home/featurize/data/train.jsonl',
-    help='Path to the path of train dataset files',
-)
-parser.add_argument(
-    '--testdataset',
-    type=str,
-    default='/home/featurize/data/test.jsonl',
-    help='Path to the path of test dataset files',
-)
 
 args = parser.parse_args()
 
@@ -39,10 +26,8 @@ with open(args.config, file_mode) as f:
 
 # General
 experiment_id = config['general']['id']
-
-# Dataset
-train_dataset_path = args.traindataset
-test_dataset_path = args.testdataset
+hf_dataset_name = config['general']['hf_dataset_name']
+hf_train_split = config['general'].get('hf_train_split', 'train')
 
 # hyperparameters
 training = config['training']

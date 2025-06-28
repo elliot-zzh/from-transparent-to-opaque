@@ -1,53 +1,43 @@
-import json
 import re
-
-import polars as pl
+from datasets import load_dataset
 from math_verify import parse, verify
 from torch.utils.data import DataLoader, Dataset
-from tqdm import tqdm
-
 from parameters import (
     sample_num,
     sample_problem_batch,
-    test_dataset_path,
-    train_dataset_path,
+    hf_dataset_name,
+    hf_train_split,
     enable_swapping,
 )
 from tokenizer import prompt, prompt_suffix
 
-
-def read_jsonl_with_progress(file_path):
-    data = []
-    with open(file_path, 'r') as f:
-        total_lines = sum(1 for _ in f)
-    with open(file_path, 'r') as f:
-        for line in tqdm(f, total=total_lines, desc=f'Reading {file_path}'):
-            data.append(json.loads(line.strip()))
-    return pl.DataFrame(data)
-
-
-data_train = read_jsonl_with_progress(train_dataset_path)
-data_test = read_jsonl_with_progress(test_dataset_path)
+# Only load the specified split
+train_data = load_dataset(hf_dataset_name, split=hf_train_split)
 
 
 class dataset(Dataset):
-    def __init__(self, df):
-        questions = df['question'].to_list()
-        answers = df['answer'].to_list()
-        self.problems = [prompt + question + prompt_suffix for question in questions]
-        self.answers = answers
+    def __init__(self, hf_split):
+        self.hf_split = hf_split
         self.sample_num = sample_num
+        self.enable_swapping = enable_swapping
+        self.prompt = prompt
+        self.prompt_suffix = prompt_suffix
 
     def __len__(self):
-        return len(self.problems) * (self.sample_num if enable_swapping else 1)
+        base_len = len(self.hf_split)
+        return base_len * (self.sample_num if self.enable_swapping else 1)
 
     def __getitem__(self, index):
-        question_index = index // self.sample_num if enable_swapping else index
-        return self.problems[question_index], self.answers[question_index]
+        base_len = len(self.hf_split)
+        question_index = index // self.sample_num if self.enable_swapping else index
+        item = self.hf_split[question_index]
+        problem = self.prompt + item['question'] + self.prompt_suffix
+        answer = item['answer']
+        return problem, answer
 
 
 data_train = DataLoader(
-    dataset(data_train), batch_size=sample_problem_batch * sample_num, shuffle=True
+    dataset(train_data), batch_size=sample_problem_batch * sample_num, shuffle=True
 )
 
 boxed_match = re.compile(r'\\boxed\{[^}]*\}')
