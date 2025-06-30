@@ -5,7 +5,7 @@ from torch.optim import Adam, AdamW
 from torch.utils.tensorboard import SummaryWriter
 from transformers import AutoModelForCausalLM
 
-from config import accelerator, device, model_name, model_path
+from config import accelerator, device, model_name, model_path, eot_token, eoth_token, im_end_token
 from data import data_train
 from parameters import (
     experiment_id,
@@ -21,7 +21,8 @@ writer = SummaryWriter(f'runs/experiment-{experiment_id}')
 # load the model
 if model_path:
     model = AutoModelForCausalLM.from_pretrained(
-        model_path,
+        model_name,
+        cache_dir=model_path,
         device_map=device,
         torch_dtype=torch.bfloat16,
         attn_implementation='sdpa',
@@ -33,8 +34,6 @@ else:
         torch_dtype=torch.bfloat16,
         attn_implementation='sdpa',
     )
-# model.config.use_sliding_window = True
-# model.config.sliding_window = 4096
 model.gradient_checkpointing_enable()
 torch.backends.cuda.enable_flash_sdp(True)
 
@@ -56,25 +55,6 @@ optimizers = [
     AdamW(model.parameters(), lr=lr),
 ]
 
-"""
-warmup_scheduler = LinearLR(
-    optimizers[2],
-    start_factor=gater_lr_start_factor,
-    total_iters=gater_lr_warmup_interval,
-)
-cosine_scheduler = CosineAnnealingLR(
-    optimizers[2],
-    T_max=gater_lr_decay_interval,
-    eta_min=gater_lr_min,
-)
-gater_scheduler = ChainedScheduler(
-    [
-        warmup_scheduler,
-        cosine_scheduler,
-    ]
-)
-"""
-
 (model, optimizers[0], data_train) = accelerator.prepare(
     model, optimizers[0], data_train
 )
@@ -82,5 +62,7 @@ gater_scheduler = ChainedScheduler(
 lossf = nn.CrossEntropyLoss(reduction='none')
 hidden_regularizer = nn.MSELoss(reduction='none')
 
-eot, eoth = tokenizer('<｜end▁of▁sentence｜></think>').input_ids[1:]
-im_end = eot
+# end_of_text mark
+im_end = tokenizer(im_end_token).input_ids[0]
+eot = tokenizer(eot_token).input_ids[0]
+eoth = tokenizer(eoth_token).input_ids[0]
