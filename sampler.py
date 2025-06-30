@@ -147,7 +147,9 @@ def sampler(
         ).sum(dim=-1)
         original_embeds = model.model.model.embed_tokens(selected_index.unsqueeze(-1))
         if soft_thinking:
-            embeds = original_embeds * (1 - concept_mask[:, -1:]).unsqueeze(-1) + soft_embeds * concept_mask[:, -1:].unsqueeze(-1)
+            embeds = original_embeds * (1 - concept_mask[:, -1:]).unsqueeze(
+                -1
+            ) + soft_embeds * concept_mask[:, -1:].unsqueeze(-1)
         else:
             embeds = original_embeds
         highH_count += (

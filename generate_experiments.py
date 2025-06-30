@@ -144,7 +144,10 @@ def main():
         {'training.self_distillation_factor': 1},
         {'training.self_distillation_factor': 0.5},
         {'training.self_distillation_factor': 0},  # 0 -> w/o self-distillation
-        {'training.self_distillation_factor': 0, 'soft_thinking': False}, # DAPO baseline
+        {
+            'training.self_distillation_factor': 0,
+            'soft_thinking': False,
+        },  # DAPO baseline
     ]
 
     # Generate all configurations
