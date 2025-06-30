@@ -206,6 +206,25 @@ def train():
                     res_probs = res_probs[filt]
                 """
 
+                print(rank, 'correctness rate: ', correctness_rate)
+                writer.add_scalar('correctness_rate/train', correctness_rate, step)
+                writer.add_scalar(
+                    'length/train', text_end_indices.float().mean().item() + 1, step
+                )
+                writer.add_scalar(
+                    'correct_length',
+                    (
+                        text_end_indices[correctness_rewards == corr_reward]
+                        .float()
+                        .mean()
+                        .item()
+                        if (correctness_rewards == corr_reward).any()
+                        else max_sample_length
+                    ),
+                    step,
+                )
+                writer.add_text('sample_text/train', decoded[0], step)
+
                 shuffle_index = torch.randperm(res.shape[0])
                 res = res[shuffle_index]
                 mask = mask[shuffle_index]
@@ -216,9 +235,6 @@ def train():
                 correctness_rewards = correctness_rewards[shuffle_index]
                 concept_token_probs = concept_token_probs[shuffle_index]
                 concept_token_indices = concept_token_indices[shuffle_index]
-
-                print(rank, 'correctness rate: ', correctness_rate)
-                writer.add_scalar('correctness_rate/train', correctness_rate, step)
 
                 # reward normalization to get advantage
                 max_len_mask = len_rewards >= max_sample_length
@@ -378,10 +394,6 @@ def train():
                     step += 1
 
                 print(rank, f'Step {step}, Loss: {loss.item():.8f}')
-                writer.add_scalar(
-                    'length/train', text_end_indices.float().mean().item() + 1, step
-                )
-                writer.add_text('sample_text/train', decoded[0], step)
 
                 cleanup()
 
