@@ -3,7 +3,7 @@ import torch.nn.functional as F
 from tqdm import tqdm
 from transformers import DynamicCache, SinkCache
 
-from config import device
+from config import device, soft_thinking
 from forward import model_forward
 from model import accelerator, eot, im_end, model, eoth
 from parameters import (
@@ -146,9 +146,10 @@ def sampler(
             * concept_probs.unsqueeze(-2)
         ).sum(dim=-1)
         original_embeds = model.model.model.embed_tokens(selected_index.unsqueeze(-1))
-        embeds = original_embeds * (1 - concept_mask[:, -1:]).unsqueeze(
-            -1
-        ) + soft_embeds * concept_mask[:, -1:].unsqueeze(-1)
+        if soft_thinking:
+            embeds = original_embeds * (1 - concept_mask[:, -1:]).unsqueeze(-1) + soft_embeds * concept_mask[:, -1:].unsqueeze(-1)
+        else:
+            embeds = original_embeds
         highH_count += (
             safe_entropy(logits).view(problem_batch_size) > entropy_tao
         ).int()

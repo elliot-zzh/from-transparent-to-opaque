@@ -7,6 +7,7 @@ hf_train_split = "train"
 im_end_token = "<｜end▁of▁sentence｜>"
 eot_token = "<｜end▁of▁sentence｜>"
 eoth_token = "</think>"
+soft_thinking = true
 
 [training]
 num_epochs = 3
