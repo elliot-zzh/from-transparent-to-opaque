@@ -86,9 +86,6 @@ def sampler(
     res_probs = torch.zeros(problem_batch_size, 0, dtype=torch.float32).to(device)
 
     for i in tqdm(range(max_length), desc='sampling progress'):
-        if i % gc_interval == 0:
-            cleanup()
-
         sample_probs = F.softmax(logits / temperature, dim=-1)
         sample_probs, topk_indices = torch.topk(
             sample_probs,

@@ -384,7 +384,7 @@ def train():
                 writer.add_text('sample_text/train', decoded[0], step)
 
                 cleanup()
-                
+
         if step > total_steps:
             break
 
