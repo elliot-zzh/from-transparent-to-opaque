@@ -384,6 +384,9 @@ def train():
                 writer.add_text('sample_text/train', decoded[0], step)
 
                 cleanup()
+                
+        if step > total_steps:
+            break
 
         # Save checkpoint
         if step % save_interval == 0:
