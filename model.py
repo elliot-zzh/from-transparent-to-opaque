@@ -5,7 +5,15 @@ from torch.optim import Adam, AdamW
 from torch.utils.tensorboard import SummaryWriter
 from transformers import AutoModelForCausalLM
 
-from config import accelerator, device, model_name, model_path, eot_token, eoth_token, im_end_token
+from config import (
+    accelerator,
+    device,
+    model_name,
+    model_path,
+    eot_token,
+    eoth_token,
+    im_end_token,
+)
 from data import data_train
 from parameters import (
     experiment_id,

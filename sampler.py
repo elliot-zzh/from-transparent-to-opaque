@@ -86,7 +86,7 @@ def sampler(
     res_probs = torch.zeros(problem_batch_size, 0, dtype=torch.float32).to(device)
 
     seq_entropy_sum = torch.zeros(problem_batch_size, device=device)
-    
+
     for i in tqdm(range(max_length), desc='sampling progress'):
         sample_probs = F.softmax(logits / temperature, dim=-1)
         sample_probs, topk_indices = torch.topk(
@@ -192,9 +192,8 @@ def sampler(
     )
     concept_mask = pad_up(concept_mask, filling=0, dim=1, target=max_length)
 
-
     monitored_entropy = (seq_entropy_sum / (text_end_indices + 1)).mean().item()
-    
+
     return (
         res,
         res_probs,

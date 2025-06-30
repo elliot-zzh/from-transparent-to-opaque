@@ -227,7 +227,11 @@ def train():
                     step,
                 )
                 writer.add_text('sample_text/train', decoded[0], step)
-                writer.add_scalar('entropy/train', monitored_entropy * sample_problem_sub_batch / sample_problem_batch, step)
+                writer.add_scalar(
+                    'entropy/train',
+                    monitored_entropy * sample_problem_sub_batch / sample_problem_batch,
+                    step,
+                )
 
                 shuffle_index = torch.randperm(res.shape[0])
                 res = res[shuffle_index]
