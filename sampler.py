@@ -79,7 +79,7 @@ def sampler(
         device
     )  # 1 -> not ended
     text_end_indices = torch.ones(problem_batch_size, dtype=torch.long).to(device) * (
-        max_length + input_ids.shape[1]
+        max_length
     )
 
     res = torch.zeros(problem_batch_size, 0, dtype=torch.long).to(device)
