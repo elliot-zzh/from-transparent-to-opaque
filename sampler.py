@@ -85,6 +85,8 @@ def sampler(
     res = torch.zeros(problem_batch_size, 0, dtype=torch.long).to(device)
     res_probs = torch.zeros(problem_batch_size, 0, dtype=torch.float32).to(device)
 
+    seq_entropy_sum = torch.zeros(problem_batch_size, device=device)
+    
     for i in tqdm(range(max_length), desc='sampling progress'):
         sample_probs = F.softmax(logits / temperature, dim=-1)
         sample_probs, topk_indices = torch.topk(
@@ -151,6 +153,10 @@ def sampler(
             safe_entropy(logits).view(problem_batch_size) > entropy_tao
         ).int()
 
+        entropy_step = safe_entropy(logits)
+        not_ended = text_end_mask.bool()
+        seq_entropy_sum[not_ended] += entropy_step[not_ended]
+
         if not gen_all_done and im_end in selected_index:
             text_end_mask.masked_fill_(selected_index == im_end, 0)
             text_end_indices.masked_fill_(selected_index == im_end, i)
@@ -171,7 +177,6 @@ def sampler(
             pos=cache_pos,
             kv_cache=kv_cache,
         ).float()
-
     cleanup()
 
     res = pad_up(res, filling=eot, dim=1, target=max_length)
@@ -187,9 +192,9 @@ def sampler(
     )
     concept_mask = pad_up(concept_mask, filling=0, dim=1, target=max_length)
 
-    # entropy = entropy.transpose(0, 1).cpu().numpy()
-    # pd.DataFrame(entropy, columns=[f'Col{j+1}' for j in range(entropy.shape[1])]).to_csv('entropy.csv', index=False)
 
+    monitored_entropy = (seq_entropy_sum / (text_end_indices + 1)).mean().item()
+    
     return (
         res,
         res_probs,
@@ -198,4 +203,5 @@ def sampler(
         concept_token_probs,
         concept_token_indices,
         concept_mask,
+        monitored_entropy,
     )

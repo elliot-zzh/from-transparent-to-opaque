@@ -105,7 +105,7 @@ def train():
             with torch.no_grad():
                 res = res_probs = text_end_indices = mask = concept_token_probs = (
                     concept_token_indices
-                ) = concept_mask = None
+                ) = concept_mask = monitored_entropy = None
                 for i in range(0, sample_problem_batch, sample_problem_sub_batch):
                     if init_res:
                         (
@@ -116,6 +116,7 @@ def train():
                             concept_token_probs_,
                             concept_token_indices_,
                             concept_mask_,
+                            monitored_entropy_,
                         ) = sampler(
                             input_ids[
                                 i * sample_num : (i + sample_problem_sub_batch)
@@ -145,6 +146,7 @@ def train():
                         )
                         mask = torch.cat([mask, mask_], dim=0)
                         concept_mask = torch.cat([concept_mask, concept_mask_], dim=0)
+                        monitored_entropy += monitored_entropy_
                     else:
                         (
                             res,
@@ -154,6 +156,7 @@ def train():
                             concept_token_probs,
                             concept_token_indices,
                             concept_mask,
+                            monitored_entropy,
                         ) = sampler(
                             input_ids[: sample_problem_sub_batch * sample_num],
                             problem_attn_mask[: sample_problem_sub_batch * sample_num],
@@ -224,6 +227,7 @@ def train():
                     step,
                 )
                 writer.add_text('sample_text/train', decoded[0], step)
+                writer.add_scalar('entropy/train', monitored_entropy * sample_problem_sub_batch / sample_problem_batch, step)
 
                 shuffle_index = torch.randperm(res.shape[0])
                 res = res[shuffle_index]
