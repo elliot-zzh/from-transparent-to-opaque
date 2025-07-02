@@ -48,8 +48,13 @@ from utils import cleanup, tokenize
 rank = os.environ['CUDA_VISIBLE_DEVICES']
 
 
-def save_model(steps):  # TODO: save checkpoints?
-    accelerator.save_model(model, f'./model/rank-{rank}-model-{steps}')
+def save_model(steps):
+    unwrapped_model = accelerator.unwrap_model(model)
+    unwrapped_model.save_pretrained(
+        f'./model/rank-{rank}-model-{steps}',
+        is_main_process=accelerator.is_main_process,
+        save_function=accelerator.save,
+    )
 
 
 def step_optimizer():
