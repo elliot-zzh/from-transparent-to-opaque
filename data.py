@@ -48,12 +48,14 @@ def verifier(model_anss, corr_anss, corr_score=2, wrong_score=-1):
     for idx, i in enumerate(model_anss):
         model_ans = boxed_match.findall(i)
         if model_ans:
-            model_ans = parse(model_ans[-1])
-            res.append(
-                corr_score
-                if verify(model_ans, parse(corr_anss[idx % len(corr_anss)]))
-                else wrong_score
-            )
+            try:
+                model_ans_parsed = parse(model_ans[-1])
+                corr_ans_parsed = parse(corr_anss[idx % len(corr_anss)])
+                res.append(
+                    corr_score if verify(model_ans_parsed, corr_ans_parsed) else wrong_score
+                )
+            except Exception:
+                res.append(wrong_score)
         else:
             res.append(wrong_score)
     return res
