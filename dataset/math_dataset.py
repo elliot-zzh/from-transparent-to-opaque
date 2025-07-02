@@ -88,6 +88,18 @@ def jsonl_dump(data_list, file_path):
         for data in data_list:
             f.write(json.dumps(data) + '\n')
 
+def jsonl_read(file_path):
+    """
+    Reads a JSONL file and returns a list of dictionaries.
+    :param file_path: The path to the JSONL file.
+    :return: A list of dictionaries read from the JSONL file.
+    """
+    data_list = []
+    with open(file_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            data_list.append(json.loads(line.strip()))
+    return data_list
+
 def process_math_dataset():
     """
     Processes the MATH dataset by extracting and normalizing the data.
