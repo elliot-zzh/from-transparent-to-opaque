@@ -158,7 +158,7 @@ def sampler(
 
         entropy_step = safe_entropy(logits)
         not_ended = text_end_mask.bool()
-        seq_entropy_sum[not_ended] += entropy_step[not_ended].view(problem_batch_size)
+        seq_entropy_sum[not_ended] += entropy_step[not_ended].squeeze(-1)
 
         if not gen_all_done and im_end in selected_index:
             text_end_mask.masked_fill_(selected_index == im_end, 0)
