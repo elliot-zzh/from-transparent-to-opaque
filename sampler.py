@@ -1,7 +1,7 @@
 import torch
 import torch.nn.functional as F
 from tqdm import tqdm
-from transformers import DynamicCache, SinkCache
+from transformers import DynamicCache, StaticCache
 
 from config import device, soft_thinking
 from forward import model_forward
@@ -52,9 +52,18 @@ def sampler(
 
     # tokenize
     problem_batch_size = input_ids.shape[0]
-    cache_pos = torch.arange(input_ids.shape[1], dtype=torch.int, device=device)
+    cache_pos = torch.arange(input_ids.shape[1], dtype=torch.long, device=device)
     # kv_cache = SinkCache(num_sink_tokens=512, window_length=4096)
     kv_cache = DynamicCache()
+    '''
+    kv_cache = StaticCache(
+        config=model.config,
+        max_batch_size=problem_batch_size,
+        max_cache_len=input_ids.shape[1] + max_length,
+        device=device,
+        dtype=torch.float16,
+    )
+    '''
 
     # prefill the problem
     with accelerator.autocast():
@@ -66,16 +75,16 @@ def sampler(
         )[:, -1:].float()
 
     concept_token_probs = torch.Tensor(problem_batch_size, 0, topk).float().to(device)
-    concept_token_indices = torch.Tensor(problem_batch_size, 0, topk).int().to(device)
+    concept_token_indices = torch.Tensor(problem_batch_size, 0, topk).long().to(device)
     concept_mask = (
         torch.Tensor(problem_batch_size, 0).int().to(device)
     )  # 1 -> not masked
-    highH_count = torch.zeros(problem_batch_size).int().to(device)
+    highH_count = torch.zeros(problem_batch_size).long().to(device)
 
     # text_end_appeared = False # if the first <｜end▁of▁sentence｜>
     gen_all_done = False
 
-    text_end_mask = torch.ones(problem_batch_size, dtype=torch.int8).to(
+    text_end_mask = torch.ones(problem_batch_size, dtype=torch.long).to(
         device
     )  # 1 -> not ended
     text_end_indices = torch.ones(problem_batch_size, dtype=torch.long).to(device) * (
@@ -156,7 +165,9 @@ def sampler(
             safe_entropy(logits).view(problem_batch_size) > entropy_tao
         ).int()
 
-        entropy_step = safe_entropy(logits)
+        entropy_step = safe_entropy(
+            torch.topk(logits, k=128, largest=True, sorted=False, dim=-1)[0]
+        )
         not_ended = text_end_mask.bool()
         seq_entropy_sum[not_ended] += entropy_step[not_ended].squeeze(-1)
 
@@ -180,6 +191,7 @@ def sampler(
             pos=cache_pos,
             kv_cache=kv_cache,
         ).float()
+
     cleanup()
 
     res = pad_up(res, filling=eot, dim=1, target=max_length)

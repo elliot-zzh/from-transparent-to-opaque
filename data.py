@@ -52,7 +52,9 @@ def verifier(model_anss, corr_anss, corr_score=2, wrong_score=-1):
                 model_ans_parsed = parse(model_ans[-1])
                 corr_ans_parsed = parse(corr_anss[idx % len(corr_anss)])
                 res.append(
-                    corr_score if verify(model_ans_parsed, corr_ans_parsed) else wrong_score
+                    corr_score
+                    if verify(model_ans_parsed, corr_ans_parsed)
+                    else wrong_score
                 )
             except Exception:
                 res.append(wrong_score)

@@ -57,8 +57,6 @@ peft_config = LoraConfig(
 model = get_peft_model(model, peft_config)
 model.print_trainable_parameters()
 
-print('gater: ', end=' ')
-
 optimizers = [
     AdamW(model.parameters(), lr=lr),
 ]
