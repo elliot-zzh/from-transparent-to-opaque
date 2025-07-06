@@ -335,33 +335,28 @@ def train():
                                 return_dict=True,
                             ).logits
 
-                            """
                             shrunk_logits, shrunk_indices = torch.topk(
                                 logits[:, input_ids.shape[1] - 1 :],
-                                k=128,
+                                k=256,
                                 dim=-1,
                                 largest=True,
                                 sorted=False,
                             )
                             shrunk_logits = shrunk_logits.float()
-                            """
 
-                            # compute DAPO loss
+                            # compute CISPO loss
                             target = res[i:end, :]
                             target[target >= logits.shape[-1]] = 0
                             new_probs = (
-                                F.log_softmax(
-                                    logits[:, input_ids.shape[1] - 1 :], dim=-1
-                                )
-                                .gather(-1, target.unsqueeze(-1))
-                                .squeeze(-1)
-                            )
-                            loss = torch.exp(new_probs - res_probs[i:end, :])
-                            clipped = torch.clamp(loss, 1 - clip_high, 1 + clip_low)
-                            clipped *= rewards[i:end].unsqueeze(-1)
-                            loss = torch.min(
-                                loss * rewards[i:end].unsqueeze(-1), clipped
-                            )
+                                F.log_softmax(shrunk_logits, dim=-1)
+                                * (shrunk_indices == target.unsqueeze(-1)).float()
+                            ).sum(dim=-1)
+                            loss = torch.exp(new_probs - res_probs[i:end, :]).detach()
+                            loss = torch.clamp(
+                                loss, 1 - clip_high, 1 + clip_low
+                            ).detach()
+                            loss *= new_probs
+                            loss *= rewards[i:end].unsqueeze(-1)
                             loss *= mask[i:end, input_ids.shape[1] :]
                             loss = (
                                 (loss.sum(dim=-1))
@@ -371,13 +366,22 @@ def train():
                                 )  # here we want to maximaize it, aligned with DAPO target
                             )
                             if self_distillation_factor > 0:
-                                new_concept_probs = torch.log_softmax(
-                                    logits[:, input_ids.shape[1] - 1 :]
-                                    / concept_temperature,
-                                    dim=-1,
-                                ).gather(-1, concept_token_indices[i:end, :])
-                                new_concept_probs /= new_concept_probs.sum(
-                                    dim=-1, keepdim=True
+                                matches = shrunk_indices.unsqueeze(
+                                    -2
+                                ) == concept_token_indices[i:end].unsqueeze(-1)
+                                has_match = matches.any(dim=-1)
+                                matched_indices = matches.short().argmax(dim=-1)
+                                new_concept_probs = (
+                                    torch.log_softmax(
+                                        shrunk_logits / concept_temperature,
+                                        dim=-1,
+                                    ).gather(-1, matched_indices)
+                                    * has_match.float()
+                                )
+                                new_concept_probs -= torch.log(
+                                    torch.exp(new_concept_probs).sum(
+                                        dim=-1, keepdim=True
+                                    )
                                 )
                                 self_distillation_loss = kl_divergence(
                                     concept_token_probs[i:end, :],
