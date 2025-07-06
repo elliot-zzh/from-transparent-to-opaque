@@ -37,7 +37,7 @@ from parameters import (
     save_interval,
     self_distillation_factor_pos,
     self_distillation_factor_neg,
-    soft_embeds_train_step,
+    soft_embeds_train_start,
     total_steps,
     train_gc_interval,
 )
@@ -308,7 +308,7 @@ def train():
                             problem_embeds = model.model.model.embed_tokens(
                                 input_ids[i:end]
                             )
-                            if soft_embeds_train_step <= step:
+                            if soft_embeds_train_start <= step:
                                 soft_embeds = (
                                     model.model.model.embed_tokens(
                                         concept_token_indices[i:end, :-1]
@@ -369,8 +369,8 @@ def train():
                                 )  # here we want to maximaize it, aligned with DAPO target
                             )
                             if (
-                                self_distillation_factor > 0
-                                and soft_embeds_train_step <= step
+                                self_distillation_factor_pos > 0
+                                and soft_embeds_train_start <= step
                             ):
                                 matches = shrunk_indices.unsqueeze(
                                     -2
@@ -395,8 +395,12 @@ def train():
                                 )
                                 self_distillation_loss *= concept_mask[i:end, :]
                                 self_distillation_factor = torch.abs(rewards[i:end])
-                                self_distillation_factor[rewards > 0] *= self_distillation_factor_pos
-                                self_distillation_factor[rewards < 0] *= self_distillation_factor_neg
+                                self_distillation_factor[rewards > 0] *= (
+                                    self_distillation_factor_pos
+                                )
+                                self_distillation_factor[rewards < 0] *= (
+                                    self_distillation_factor_neg
+                                )
                                 self_distillation_loss = (
                                     self_distillation_loss.sum(dim=-1)
                                     / concept_mask[i:end, :].sum()
