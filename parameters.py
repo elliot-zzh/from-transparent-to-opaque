@@ -58,6 +58,7 @@ clip_high = training['clip_high']
 clip_low = training['clip_low']
 lr = training['lr']
 self_distillation_factor = training['self_distillation_factor']
+soft_embeds_train_start = training['soft_embeds_train_start']
 
 # other parameters
 model = config['model']

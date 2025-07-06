@@ -36,6 +36,7 @@ from parameters import (
     sample_topk,
     save_interval,
     self_distillation_factor,
+    soft_embeds_train_step,
     total_steps,
     train_gc_interval,
 )
@@ -306,24 +307,27 @@ def train():
                             problem_embeds = model.model.model.embed_tokens(
                                 input_ids[i:end]
                             )
-                            soft_embeds = (
-                                model.model.model.embed_tokens(
-                                    concept_token_indices[i:end, :-1]
-                                ).transpose(-2, -1)
-                                * concept_token_probs[i:end, :-1].unsqueeze(-2)
-                            ).sum(dim=-1)
-                            original_embeds = model.model.model.embed_tokens(
-                                res[i:end, :-1]
-                            )
-                            embeds = torch.cat(
-                                [
-                                    problem_embeds[:, : input_ids.shape[1]],
-                                    soft_embeds * concept_mask[i:end, :-1].unsqueeze(-1)
-                                    + original_embeds
-                                    * (1 - concept_mask[i:end, :-1]).unsqueeze(-1),
-                                ],
-                                dim=1,
-                            )
+                            if soft_embeds_train_step <= step:
+                                soft_embeds = (
+                                    model.model.model.embed_tokens(
+                                        concept_token_indices[i:end, :-1]
+                                    ).transpose(-2, -1)
+                                    * concept_token_probs[i:end, :-1].unsqueeze(-2)
+                                ).sum(dim=-1)
+                                original_embeds = model.model.model.embed_tokens(
+                                    res[i:end, :-1]
+                                )
+                                embeds = torch.cat(
+                                    [
+                                        problem_embeds[:, : input_ids.shape[1]],
+                                        soft_embeds * concept_mask[i:end, :-1].unsqueeze(-1)
+                                        + original_embeds
+                                        * (1 - concept_mask[i:end, :-1]).unsqueeze(-1),
+                                    ],
+                                    dim=1,
+                                )
+                            else:
+                                embeds = problem_embeds
                             logits = model.model.forward(
                                 inputs_embeds=embeds,
                                 attention_mask=mask[i:end, :-1],
@@ -362,7 +366,7 @@ def train():
                                     -1
                                 )  # here we want to maximaize it, aligned with DAPO target
                             )
-                            if self_distillation_factor > 0:
+                            if self_distillation_factor > 0 and soft_embeds_train_step <= step:
                                 matches = shrunk_indices.unsqueeze(
                                     -2
                                 ) == concept_token_indices[i:end].unsqueeze(-1)

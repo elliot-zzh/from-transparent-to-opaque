@@ -37,6 +37,7 @@ clip_high = 0.3
 clip_low = 0.2
 lr = 1e-6
 self_distillation_factor = 1
+soft_embeds_train_start = 0
 
 [model]
 looping_depth = 0
