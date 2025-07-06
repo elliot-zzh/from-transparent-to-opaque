@@ -320,7 +320,8 @@ def train():
                                 embeds = torch.cat(
                                     [
                                         problem_embeds[:, : input_ids.shape[1]],
-                                        soft_embeds * concept_mask[i:end, :-1].unsqueeze(-1)
+                                        soft_embeds
+                                        * concept_mask[i:end, :-1].unsqueeze(-1)
                                         + original_embeds
                                         * (1 - concept_mask[i:end, :-1]).unsqueeze(-1),
                                     ],
@@ -366,7 +367,10 @@ def train():
                                     -1
                                 )  # here we want to maximaize it, aligned with DAPO target
                             )
-                            if self_distillation_factor > 0 and soft_embeds_train_step <= step:
+                            if (
+                                self_distillation_factor > 0
+                                and soft_embeds_train_step <= step
+                            ):
                                 matches = shrunk_indices.unsqueeze(
                                     -2
                                 ) == concept_token_indices[i:end].unsqueeze(-1)
