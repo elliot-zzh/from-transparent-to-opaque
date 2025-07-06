@@ -1,6 +1,6 @@
-import re
-import os
 import json
+import os
+import re
 
 root = os.path.join('data', 'MATH')
 

@@ -1,8 +1,9 @@
 import gc
+
 import polars as pl
 import torch
-from torch.utils.data import Dataset, DataLoader
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from torch.utils.data import DataLoader, Dataset
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from config import model_name
 from vae_train.parameters import batch_size

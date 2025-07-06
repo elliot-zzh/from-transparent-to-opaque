@@ -1,16 +1,18 @@
 import gc
+
+import matplotlib.pyplot as plt
 import torch
-from vae_train.dataset import train_loader, test_loader, model
+
+from vae_train.dataset import model, test_loader, train_loader
 from vae_train.parameters import (
     device,
-    num_epochs,
     gradient_accumulation_steps,
-    log_interval,
     hidden_layer_num,
+    log_interval,
+    num_epochs,
     save_interval,
 )
-from vae_train.vae_model import optimizer, scaler, vae, lossf
-import matplotlib.pyplot as plt
+from vae_train.vae_model import lossf, optimizer, scaler, vae
 
 
 def cleanup():

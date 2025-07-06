@@ -57,33 +57,7 @@ step = training['step']
 clip_high = training['clip_high']
 clip_low = training['clip_low']
 lr = training['lr']
-vae_lr = training['vae_lr']
-gater_lr = training['gater_lr']
-gater_lr_start_factor = training['gater_lr_start_factor']
-gater_lr_min = training['gater_lr_min']
-gater_lr_decay_interval = training['gater_lr_decay_interval']
-gater_lr_warmup_interval = training['gater_lr_warmup_interval']
 self_distillation_factor = training['self_distillation_factor']
-
-# hidden regularization
-hidden_reg = config['hidden_regularization']
-enable_hidden_regularization = hidden_reg['enable_hidden_regularization']
-enable_length_reg_bonus = hidden_reg['enable_length_reg_bonus']
-hidden_regularization_rate = hidden_reg['hidden_regularization_rate']
-hidden_dropout_rate = hidden_reg['hidden_dropout_rate']
-hidden_reg_len_bonus_a = hidden_reg['hidden_reg_len_bonus_a']
-hidden_reg_len_bonus_high = hidden_reg['hidden_reg_len_bonus_high']
-enable_hidden_updating = hidden_reg['enable_hidden_updating']
-hidden_updating_rate = hidden_reg['hidden_updating_rate']
-
-# gating value bonus
-gating = config['gating_value']
-enable_gating_bonus = gating['enable_gating_bonus']
-gating_bonus_mode = gating['gating_bonus_mode']
-gating_value_bonus = gating['gating_value_bonus']
-gating_value_decay = gating['gating_value_decay']
-gating_value_lambda = gating['gating_value_lambda']
-gating_bonus_update_step = gating['gating_bonus_update_step']
 
 # other parameters
 model = config['model']

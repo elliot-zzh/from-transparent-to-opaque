@@ -10,9 +10,7 @@ quote-style = "single"
 
 [lint]
 select = [
-    "E",  # pycodestyle errors
     "F",  # pyflakes
-    "W",  # pycodestyle warnings
     "I",  # isort
 ]
 

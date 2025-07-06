@@ -1,11 +1,11 @@
 import torch
 import torch.nn.functional as F
 from tqdm import tqdm
-from transformers import DynamicCache, StaticCache
+from transformers import DynamicCache
 
 from config import device, soft_thinking
 from forward import model_forward
-from model import accelerator, eot, im_end, model, eoth
+from model import accelerator, eot, eoth, im_end, model
 from parameters import (
     enable_swapping,
 )

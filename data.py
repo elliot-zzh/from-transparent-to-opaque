@@ -1,13 +1,15 @@
 import re
+
 from datasets import load_dataset
 from math_verify import parse, verify
 from torch.utils.data import DataLoader, Dataset
+
 from parameters import (
-    sample_num,
-    sample_problem_batch,
+    enable_swapping,
     hf_dataset_name,
     hf_train_split,
-    enable_swapping,
+    sample_num,
+    sample_problem_batch,
 )
 from tokenizer import prompt, prompt_suffix
 
