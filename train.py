@@ -35,7 +35,8 @@ from parameters import (
     sample_temperature,
     sample_topk,
     save_interval,
-    self_distillation_factor,
+    self_distillation_factor_pos,
+    self_distillation_factor_neg,
     soft_embeds_train_step,
     total_steps,
     train_gc_interval,
@@ -393,10 +394,13 @@ def train():
                                     new_concept_probs,
                                 )
                                 self_distillation_loss *= concept_mask[i:end, :]
+                                self_distillation_factor = torch.abs(rewards[i:end])
+                                self_distillation_factor[rewards > 0] *= self_distillation_factor_pos
+                                self_distillation_factor[rewards < 0] *= self_distillation_factor_neg
                                 self_distillation_loss = (
                                     self_distillation_loss.sum(dim=-1)
                                     / concept_mask[i:end, :].sum()
-                                ) * rewards[i:end]
+                                ) * self_distillation_factor
                                 self_distillation_loss = self_distillation_loss.sum()
                                 loss += (
                                     self_distillation_factor * self_distillation_loss

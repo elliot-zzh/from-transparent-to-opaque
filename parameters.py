@@ -57,7 +57,8 @@ step = training['step']
 clip_high = training['clip_high']
 clip_low = training['clip_low']
 lr = training['lr']
-self_distillation_factor = training['self_distillation_factor']
+self_distillation_factor_pos = training['self_distillation_factor_pos']
+self_distillation_factor_neg = training['self_distillation_factor_neg']
 soft_embeds_train_start = training['soft_embeds_train_start']
 
 # other parameters
