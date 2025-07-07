@@ -111,7 +111,9 @@ def train():
                 res = res_probs = text_end_indices = mask = concept_token_probs = (
                     concept_token_indices
                 ) = concept_mask = monitored_entropy = None
-                for i in range(0, input_ids.shape[0], sample_problem_sub_batch):
+                for i in range(
+                    0, input_ids.shape[0] // sample_num, sample_problem_sub_batch
+                ):
                     end = i + sample_problem_sub_batch
                     end = end if end <= input_ids.shape[0] else input_ids.shape[0]
                     if init_res:

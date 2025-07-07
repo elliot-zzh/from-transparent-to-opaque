@@ -8,9 +8,9 @@ from tokenizer import tokenizer
 
 def cleanup():
     gc.collect()
-    if device == 'cuda':
+    if device.type == 'cuda':
         torch.cuda.empty_cache()
-    elif device == 'mps':
+    elif device.type == 'mps':
         torch.mps.empty_cache()
 
 
