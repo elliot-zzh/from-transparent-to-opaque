@@ -24,6 +24,7 @@ from parameters import (
     corr_reward,
     entropy_k,
     entropy_tao,
+    experiment_id,
     gradient_accumulation_steps,
     l_cache_length,
     max_sample_length,
@@ -50,7 +51,7 @@ rank = os.environ['CUDA_VISIBLE_DEVICES']
 def save_model(steps):
     unwrapped_model = accelerator.unwrap_model(model)
     unwrapped_model.save_pretrained(
-        f'./model/rank-{rank}-model-{steps}',
+        f'./model/checkpoint_{experiment_id}',
         is_main_process=accelerator.is_main_process,
         save_function=accelerator.save,
     )
@@ -110,7 +111,9 @@ def train():
                 res = res_probs = text_end_indices = mask = concept_token_probs = (
                     concept_token_indices
                 ) = concept_mask = monitored_entropy = None
-                for i in range(0, sample_problem_batch, sample_problem_sub_batch):
+                for i in range(0, input_ids.shape[0], sample_problem_sub_batch):
+                    end = i + sample_problem_sub_batch
+                    end = end if end <= input_ids.shape[0] else input_ids.shape[0]
                     if init_res:
                         (
                             res_,
@@ -122,14 +125,8 @@ def train():
                             concept_mask_,
                             monitored_entropy_,
                         ) = sampler(
-                            input_ids[
-                                i * sample_num : (i + sample_problem_sub_batch)
-                                * sample_num
-                            ],
-                            problem_attn_mask[
-                                i * sample_num : (i + sample_problem_sub_batch)
-                                * sample_num
-                            ],
+                            input_ids[i * sample_num : end * sample_num],
+                            problem_attn_mask[i * sample_num : end * sample_num],
                             topk=sample_topk,
                             max_length=max_sample_length,
                             temperature=sample_temperature,
@@ -236,7 +233,9 @@ def train():
                     monitored_entropy * sample_problem_sub_batch / sample_problem_batch,
                     step,
                 )
-                writer.add_scalar('rewards/train', correctness_rewards.float().mean().item(), step)
+                writer.add_scalar(
+                    'rewards/train', correctness_rewards.float().mean().item(), step
+                )
 
                 shuffle_index = torch.randperm(res.shape[0])
                 res = res[shuffle_index]
@@ -431,9 +430,8 @@ def train():
         if step > total_steps:
             break
 
-        # Save checkpoint
-        if step % save_interval == 0:
-            save_model(step)
+    # Save checkpoint
+    save_model(step)
 
     writer.close()
     print('all done')

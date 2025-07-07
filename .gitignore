@@ -14,3 +14,4 @@ vram_usage_log.csv
 
 configs/
 train_gpu*.sh
+test_gpu*.sh

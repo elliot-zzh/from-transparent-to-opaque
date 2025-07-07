@@ -35,7 +35,7 @@ def generate_single_param_configs(original_config, param_name, param_values):
     return configs
 
 
-def write_all_configs_to_files(all_configs, output_dir='configs'):
+def write_all_configs_to_files(all_configs, prefix, output_dir='configs'):
     """Write all configurations with globally unique IDs."""
     os.makedirs(output_dir, exist_ok=True)
     filenames = []
@@ -48,7 +48,7 @@ def write_all_configs_to_files(all_configs, output_dir='configs'):
         else:
             config['general'] = {'id': i}
 
-        filename = os.path.join(output_dir, f'config_{i}.toml')
+        filename = os.path.join(output_dir, f'config_{prefix}_{i}.toml')
         with open(filename, 'w') as f:
             toml.dump(config, f)
         print(f'Configuration written to {filename}')
@@ -176,7 +176,7 @@ def main():
         all_configs.append(config)
 
     # Write all configs with globally unique IDs
-    all_config_files = write_all_configs_to_files(all_configs)
+    all_config_files = write_all_configs_to_files(all_configs, 'train')
 
     # Distribute all configs across GPUs using round-robin
     sub_script_names = []
@@ -195,6 +195,68 @@ def main():
     if sub_script_names:
         generate_main_script('train.sh', sub_script_names)
         print("\nUnified training script 'train.sh' generated")
+    else:
+        print('No configurations generated')
+
+    experiments = []
+
+    for split in ['aime24', 'math500']:
+        for i in range(9):
+            experiments.append(
+                {
+                    'acc_check_only': True,
+                    'sample_num': 16 if split == 'aime24' else 1,
+                    'general.model_name': f'./model/checkpoint_{i}',
+                    'hf_train_split': split,
+                    'sample_problem_batch': 30 if split == 'aime24' else 500,
+                    'sample_problem_sub_batch': 2 if split == 'aime24' else 32,
+                }
+            )
+
+    experiments += [
+        {
+            'acc_check_only': True,
+            'sample_num': 16,
+            'hf_train_split': 'aime24',
+            'sample_problem_batch': 30,
+            'sample_problem_sub_batch': 2,
+        },
+        {
+            'acc_check_only': True,
+            'sample_num': 1,
+            'hf_train_split': 'math500',
+            'sample_problem_batch': 500,
+            'sample_problem_sub_batch': 32,
+        },
+    ]  # original DS 1.5B
+
+    # Generate all configurations
+    all_configs = []
+    for exp in experiments:
+        print(f'Processing experiment: {exp}')
+        config = apply_param_changes(original_config, exp)
+        all_configs.append(config)
+
+    # Write all configs with globally unique IDs
+    all_config_files = write_all_configs_to_files(all_configs, 'test')
+
+    # Distribute all configs across GPUs using round-robin
+    sub_script_names = []
+    for gpu in range(gpu_num):
+        assigned_configs = [
+            all_config_files[i]
+            for i in range(len(all_config_files))
+            if i % gpu_num == gpu
+        ]
+        if assigned_configs:
+            sub_script_name = f'test_gpu{gpu}.sh'
+            generate_sub_script(sub_script_name, assigned_configs, gpu)
+            sub_script_names.append(sub_script_name)
+
+    # Generate the unified main script
+    if sub_script_names:
+        generate_main_script('test.sh', sub_script_names)
+        print("\nUnified testing script 'test.sh' generated")
     else:
         print('No configurations generated')
 
