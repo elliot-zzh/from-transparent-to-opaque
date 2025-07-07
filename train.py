@@ -219,7 +219,7 @@ def train():
                     'length/train', text_end_indices.float().mean().item() + 1, step
                 )
                 writer.add_scalar(
-                    'correct_length',
+                    'correct_length/train',
                     (
                         text_end_indices[correctness_rewards == corr_reward]
                         .float()
@@ -230,12 +230,13 @@ def train():
                     ),
                     step,
                 )
-                writer.add_text('sample_text/train', decoded[0], step)
+                writer.add_text('sampled_text/train', decoded[0], step)
                 writer.add_scalar(
                     'entropy/train',
                     monitored_entropy * sample_problem_sub_batch / sample_problem_batch,
                     step,
                 )
+                writer.add_scalar('rewards/train', correctness_rewards.float().mean().item(), step)
 
                 shuffle_index = torch.randperm(res.shape[0])
                 res = res[shuffle_index]

@@ -141,13 +141,31 @@ def main():
     # Define experiments: migrated from previous param grid
     experiments = [
         {'model.enable_swapping': False},  # ablation: w/o swapping
-        {'training.self_distillation_factor_pos': 1},
-        {'training.self_distillation_factor_pos': 0.5},
-        {'training.self_distillation_factor_pos': 0},  # 0 -> w/o self-distillation
+        {
+            'training.self_distillation_factor_pos': 0.5,
+            'training.self_distillation_factor_neg': 0.05,
+        },  # w/ self-distillation
+        {'training.soft_embeds_train_start': 9999},  # non-soft training
         {
             'training.self_distillation_factor_pos': 0,
-            'soft_thinking': False,
+            'general.soft_thinking': False,
         },  # DAPO baseline
+        {
+            'training.soft_embeds_train_start': 100,
+        },  # hybrid: non-soft training and soft training
+        {'training.self_distillation_factor_pos': 0},  # 0 -> w/o self-distillation
+        {
+            'training.self_distillation_factor_pos': 0.1,
+            'training.self_distillation_factor_neg': 0.01,
+        },
+        {
+            'training.self_distillation_factor_pos': 1,
+            'training.self_distillation_factor_neg': 0.1,
+        },
+        {
+            'training.self_distillation_factor_pos': 0.5,
+            'training.self_distillation_factor_neg': -0.5,
+        },  # w/o dual self-distillation factor
     ]
 
     # Generate all configurations
