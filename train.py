@@ -397,10 +397,10 @@ def train():
                                 )
                                 self_distillation_loss *= concept_mask[i:end, :]
                                 self_distillation_factor = torch.abs(rewards[i:end])
-                                self_distillation_factor[rewards > 0] *= (
+                                self_distillation_factor[rewards[i:end] > 0] *= (
                                     self_distillation_factor_pos
                                 )
-                                self_distillation_factor[rewards < 0] *= (
+                                self_distillation_factor[rewards[i:end] < 0] *= (
                                     self_distillation_factor_neg
                                 )
                                 self_distillation_loss = (
