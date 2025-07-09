@@ -69,6 +69,6 @@ lossf = nn.CrossEntropyLoss(reduction='none')
 hidden_regularizer = nn.MSELoss(reduction='none')
 
 # end_of_text mark
-im_end = tokenizer(im_end_token).input_ids[0]
-eot = tokenizer(eot_token).input_ids[0]
-eoth = tokenizer(eoth_token).input_ids[0]
+im_end = tokenizer(im_end_token).input_ids[-1]
+eot = tokenizer(eot_token).input_ids[-1]
+eoth = tokenizer(eoth_token).input_ids[-1]
