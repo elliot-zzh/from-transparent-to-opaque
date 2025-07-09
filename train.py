@@ -220,10 +220,10 @@ def train():
                 writer.add_scalar(
                     'correct_length/train',
                     (
-                        text_end_indices[correctness_rewards == corr_reward]
+                        (text_end_indices[correctness_rewards == corr_reward]
                         .float()
                         .mean()
-                        .item()
+                        .item() + 1.0)
                         if (correctness_rewards == corr_reward).any()
                         else max_sample_length
                     ),
