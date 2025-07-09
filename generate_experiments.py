@@ -149,7 +149,7 @@ def main():
         {
             'training.self_distillation_factor_pos': 0,
             'general.soft_thinking': False,
-        },  # DAPO baseline
+        },  # CISPO baseline
         {
             'training.soft_embeds_train_start': 100,
         },  # hybrid: non-soft training and soft training

@@ -169,11 +169,12 @@ def sampler(
             torch.topk(logits, k=128, largest=True, sorted=False, dim=-1)[0]
         )
         not_ended = text_end_mask.bool()
-        seq_entropy_sum[not_ended] += entropy_step[not_ended].squeeze(-1)
+        if not_ended.any():
+          seq_entropy_sum[not_ended] += entropy_step[not_ended].squeeze(-1)
 
         if not gen_all_done and im_end in selected_index:
+            text_end_indices.masked_fill_(text_end_mask.bool() & selected_index == im_end, i)
             text_end_mask.masked_fill_(selected_index == im_end, 0)
-            text_end_indices.masked_fill_(selected_index == im_end, i)
             gen_all_done = 1 not in text_end_mask
 
         attn_mask = torch.cat(
