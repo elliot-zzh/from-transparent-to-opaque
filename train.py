@@ -1,3 +1,4 @@
+import accelerate.utils
 import torch
 
 torch.manual_seed(42)
@@ -44,8 +45,9 @@ from parameters import (
 )
 from sampler import sampler
 from utils import cleanup, tokenize
+from config import accelerator
 
-rank = os.environ['CUDA_VISIBLE_DEVICES']
+rank = accelerator.process_index
 
 
 def save_model(steps):
@@ -171,47 +173,67 @@ def train():
                         )
                         init_res = True
 
-                    cleanup()
+                cleanup()
+                res = accelerator.gather(res).unsqueeze(0)
+                res_probs = accelerator.gather(res_probs).unsqueeze(0)
+                concept_token_probs = accelerator.gather(concept_token_probs).unsqueeze(0)
+                concept_token_indices = accelerator.gather(concept_token_indices).unsqueeze(0)
+                text_end_indices = accelerator.gather(text_end_indices).unsqueeze(0)
+                mask = accelerator.gather(mask).unsqueeze(0)
+                concept_mask = accelerator.gather(concept_mask).unsqueeze(0)
+                monitored_entropy = accelerator.gather(monitored_entropy).mean().item()
 
-                decoded = tokenizer.batch_decode(res, skip_special_tokens=True)
-                correctness_rewards = torch.Tensor(
-                    verifier(
-                        decoded,
-                        ans,
-                        corr_score=corr_reward,
+                length = res.shape[0]
+
+                # The following procedures may only run in the main thread
+                if accelerator.is_main_process:
+                    # Stage 1: decode those answers to validate them.
+                    decoded = tokenizer.batch_decode(res, skip_special_tokens=True)
+                    correctness_rewards = torch.Tensor(
+                        verifier(
+                            decoded,
+                            ans,
+                            corr_score=corr_reward,
+                        )
+                    ).to(device)
+
+                    len_rewards = text_end_indices.float() + 1
+                    l = (corr_filt := correctness_rewards == corr_reward).sum()
+
+                    # if l < 10:
+                    #     continue
+
+                    init_res = False
+
+                    correctness_rate = l.cpu().item() / res.shape[0]
+
+                    # Stage: observability, which means loading data to TensorBoard.
+                    print('correctness rate: ', correctness_rate)
+                    writer.add_scalar('correctness_rate/train', correctness_rate, step)
+                    writer.add_scalar(
+                        'length/train', text_end_indices.float().mean().item() + 1, step
                     )
-                ).to(device)
-
-                len_rewards = text_end_indices.float() + 1
-                l = (corr_filt := correctness_rewards == corr_reward).sum()
-
-                # if l < 10:
-                #     continue
-
-                init_res = False
-
-                correctness_rate = l.cpu().item() / res.shape[0]
-                """
-                if (
-                    l < res.shape[0] / 3 and l != 0
-                ):  # clip too many wrong answers, currently 1:2
-                    incorr_filt = torch.ones_like(correctness_rewards).to(device)
-                    incorr_filt[correctness_rewards == corr_reward] = 0
-                    incorr_filt = torch.multinomial(incorr_filt, num_samples=l * 2)
-                    filt = torch.cat(
-                        [torch.nonzero(corr_filt, as_tuple=True)[0], incorr_filt], dim=0
+                    writer.add_scalar(
+                        'correct_length/train',
+                        (
+                            text_end_indices[correctness_rewards == corr_reward]
+                            .float()
+                            .mean()
+                            .item()
+                            if (correctness_rewards == corr_reward).any()
+                            else max_sample_length
+                        ),
+                        step,
                     )
-                    filt = filt[torch.randperm(filt.size(0))]
-                    correctness_rewards = correctness_rewards[filt]
-                    len_rewards = len_rewards[filt]
-                    mask = mask[filt]
-                    input_ids = input_ids[filt]
-                    hidden_cache = hidden_cache[filt]
-                    res = res[filt]
-                    text_end_indices = text_end_indices[filt]
-                    res_probs = res_probs[filt]
-                """
-
+                    writer.add_text('sampled_text/train', decoded[0], step)
+                    writer.add_scalar(
+                        'entropy/train',
+                        monitored_entropy * sample_problem_sub_batch / sample_problem_batch,
+                        step,
+                    )
+                    writer.add_scalar(
+                        'rewards/train', correctness_rewards.float().mean().item(), step
+                    )
                 print(rank, 'correctness rate: ', correctness_rate)
                 writer.add_scalar('correctness_rate/train', correctness_rate, step)
                 writer.add_scalar(
@@ -239,55 +261,61 @@ def train():
                     'rewards/train', correctness_rewards.float().mean().item(), step
                 )
 
-                shuffle_index = torch.randperm(res.shape[0])
-                res = res[shuffle_index]
-                mask = mask[shuffle_index]
-                res_probs = res_probs[shuffle_index]
-                text_end_indices = text_end_indices[shuffle_index]
-                input_ids = input_ids[shuffle_index]
-                len_rewards = len_rewards[shuffle_index]
-                correctness_rewards = correctness_rewards[shuffle_index]
-                concept_token_probs = concept_token_probs[shuffle_index]
-                concept_token_indices = concept_token_indices[shuffle_index]
+                    shuffle_index = torch.randperm(res.shape[0])
+                    res = res[shuffle_index]
+                    mask = mask[shuffle_index]
+                    res_probs = res_probs[shuffle_index]
+                    text_end_indices = text_end_indices[shuffle_index]
+                    input_ids = input_ids[shuffle_index]
+                    len_rewards = len_rewards[shuffle_index]
+                    correctness_rewards = correctness_rewards[shuffle_index]
+                    concept_token_probs = concept_token_probs[shuffle_index]
+                    concept_token_indices = concept_token_indices[shuffle_index]
 
-                # reward normalization to get advantage
-                max_len_mask = len_rewards >= max_sample_length
-                if max_len_mask.any():
-                    len_rewards[len_rewards >= max_sample_length] = -1
-                cache_len_mask = len_rewards <= l_cache_length
-                if cache_len_mask.any():
-                    len_rewards[len_rewards <= l_cache_length] = 0
-                len_interval_mask = torch.logical_not(
-                    torch.logical_or(max_len_mask, cache_len_mask)
-                )
-                if len_interval_mask.any():
-                    len_rewards[len_interval_mask] = (
-                        l_cache_length - len_rewards[len_interval_mask]
-                    ) / (max_sample_length - l_cache_length)
-                # rewards = correctness_rewards + len_rewards # currently remove length penalty
-                rewards = correctness_rewards
-                rewards = norm(rewards)
+                    # reward normalization to get advantage
+                    max_len_mask = len_rewards >= max_sample_length
+                    if max_len_mask.any():
+                        len_rewards[len_rewards >= max_sample_length] = -1
+                    cache_len_mask = len_rewards <= l_cache_length
+                    if cache_len_mask.any():
+                        len_rewards[len_rewards <= l_cache_length] = 0
+                    len_interval_mask = torch.logical_not(
+                        torch.logical_or(max_len_mask, cache_len_mask)
+                    )
+                    if len_interval_mask.any():
+                        len_rewards[len_interval_mask] = (
+                            l_cache_length - len_rewards[len_interval_mask]
+                        ) / (max_sample_length - l_cache_length)
+                    # rewards = correctness_rewards + len_rewards # currently remove length penalty
+                    rewards = correctness_rewards
+                    rewards = norm(rewards)
+                else:
+                    rewards = torch.zeros([length], dtype=device)
+
+                accelerate.utils.broadcast(rewards, 0)
+                accelerator.wait_for_everyone()
 
                 # truncate to max_train_length if the sampled result is too long
                 if res.shape[1] + input_ids.shape[1] > max_train_length:
-                    res = res[:, : max_train_length - input_ids.shape[1]]
-                    concept_token_indices = concept_token_indices[
-                        :, : max_train_length - input_ids.shape[1]
-                    ]
-                    concept_token_probs = concept_token_probs[
-                        :, : max_train_length - input_ids.shape[1]
-                    ]
-                    mask = mask[:, :max_train_length]
-                    res_probs = res_probs[:, : max_train_length - input_ids.shape[1]]
-                    concept_mask = concept_mask[
-                        :, : max_train_length - input_ids.shape[1]
-                    ]
+                        res = res[:, : max_train_length - input_ids.shape[1]]
+                        concept_token_indices = concept_token_indices[
+                            :, : max_train_length - input_ids.shape[1]
+                        ]
+                        concept_token_probs = concept_token_probs[
+                            :, : max_train_length - input_ids.shape[1]
+                        ]
+                        mask = mask[:, :max_train_length]
+                        res_probs = res_probs[:, : max_train_length - input_ids.shape[1]]
+                        concept_mask = concept_mask[
+                            :, : max_train_length - input_ids.shape[1]
+                        ]
 
             if acc_check_only:
+                accelerator.wait_for_everyone()
                 continue
 
             # training
-            print(rank, 'start training')
+            print('start training')
             model.train()
 
             accumulated_steps = 0
@@ -307,17 +335,17 @@ def train():
                             else res.shape[0]
                         )
                         with accelerator.autocast():
-                            problem_embeds = model.model.model.embed_tokens(
+                            problem_embeds = model.module.model.model.embed_tokens(
                                 input_ids[i:end]
                             )
                             if soft_embeds_train_start <= step:
                                 soft_embeds = (
-                                    model.model.model.embed_tokens(
+                                    model.module.model.model.embed_tokens(
                                         concept_token_indices[i:end, :-1]
                                     ).transpose(-2, -1)
                                     * concept_token_probs[i:end, :-1].unsqueeze(-2)
                                 ).sum(dim=-1)
-                                original_embeds = model.model.model.embed_tokens(
+                                original_embeds = model.module.model.model.embed_tokens(
                                     res[i:end, :-1]
                                 )
                                 embeds = torch.cat(
@@ -332,7 +360,7 @@ def train():
                                 )
                             else:
                                 embeds = problem_embeds
-                            logits = model.model.forward(
+                            logits = model.module.model.forward(
                                 inputs_embeds=embeds,
                                 attention_mask=mask[i:end, :-1],
                                 use_cache=False,

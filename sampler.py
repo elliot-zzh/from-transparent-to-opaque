@@ -68,7 +68,7 @@ def sampler(
     # prefill the problem
     with accelerator.autocast():
         logits = model_forward(
-            model.model.model.embed_tokens(input_ids),
+            model.module.model.model.embed_tokens(input_ids),
             attn_mask=attn_mask,
             pos=cache_pos,
             kv_cache=kv_cache,
@@ -151,10 +151,10 @@ def sampler(
         concept_token_probs = torch.cat([concept_token_probs, concept_probs], dim=1)
         concept_token_indices = torch.cat([concept_token_indices, topk_indices], dim=1)
         soft_embeds = (
-            model.model.model.embed_tokens(topk_indices).transpose(-2, -1)
+            model.module.model.model.embed_tokens(topk_indices).transpose(-2, -1)
             * concept_probs.unsqueeze(-2)
         ).sum(dim=-1)
-        original_embeds = model.model.model.embed_tokens(selected_index.unsqueeze(-1))
+        original_embeds = model.module.model.model.embed_tokens(selected_index.unsqueeze(-1))
         if soft_thinking:
             embeds = original_embeds * (1 - concept_mask[:, -1:]).unsqueeze(
                 -1
