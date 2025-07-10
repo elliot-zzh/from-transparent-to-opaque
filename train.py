@@ -174,14 +174,16 @@ def train():
                         init_res = True
 
                 cleanup()
-                res = accelerator.gather(res).unsqueeze(0)
-                res_probs = accelerator.gather(res_probs).unsqueeze(0)
-                concept_token_probs = accelerator.gather(concept_token_probs).unsqueeze(0)
-                concept_token_indices = accelerator.gather(concept_token_indices).unsqueeze(0)
-                text_end_indices = accelerator.gather(text_end_indices).unsqueeze(0)
-                mask = accelerator.gather(mask).unsqueeze(0)
-                concept_mask = accelerator.gather(concept_mask).unsqueeze(0)
-                monitored_entropy = accelerator.gather(monitored_entropy).mean().item()
+                print(rank, res.shape)
+                res = accelerator.gather(res)
+                print(rank, res.shape)
+                res_probs = accelerator.gather(res_probs)
+                concept_token_probs = accelerator.gather(concept_token_probs)
+                concept_token_indices = accelerator.gather(concept_token_indices)
+                text_end_indices = accelerator.gather(text_end_indices)
+                mask = accelerator.gather(mask)
+                concept_mask = accelerator.gather(concept_mask)
+                input_ids = accelerator.gather(input_ids)
 
                 length = res.shape[0]
 
@@ -227,11 +229,6 @@ def train():
                     )
                     writer.add_text('sampled_text/train', decoded[0], step)
                     writer.add_scalar(
-                        'entropy/train',
-                        monitored_entropy * sample_problem_sub_batch / sample_problem_batch,
-                        step,
-                    )
-                    writer.add_scalar(
                         'rewards/train', correctness_rewards.float().mean().item(), step
                     )
                 print(rank, 'correctness rate: ', correctness_rate)
@@ -261,54 +258,79 @@ def train():
                     'rewards/train', correctness_rewards.float().mean().item(), step
                 )
 
-                    shuffle_index = torch.randperm(res.shape[0])
-                    res = res[shuffle_index]
-                    mask = mask[shuffle_index]
-                    res_probs = res_probs[shuffle_index]
-                    text_end_indices = text_end_indices[shuffle_index]
-                    input_ids = input_ids[shuffle_index]
-                    len_rewards = len_rewards[shuffle_index]
-                    correctness_rewards = correctness_rewards[shuffle_index]
-                    concept_token_probs = concept_token_probs[shuffle_index]
-                    concept_token_indices = concept_token_indices[shuffle_index]
-
-                    # reward normalization to get advantage
-                    max_len_mask = len_rewards >= max_sample_length
-                    if max_len_mask.any():
-                        len_rewards[len_rewards >= max_sample_length] = -1
-                    cache_len_mask = len_rewards <= l_cache_length
-                    if cache_len_mask.any():
-                        len_rewards[len_rewards <= l_cache_length] = 0
-                    len_interval_mask = torch.logical_not(
-                        torch.logical_or(max_len_mask, cache_len_mask)
-                    )
-                    if len_interval_mask.any():
-                        len_rewards[len_interval_mask] = (
-                            l_cache_length - len_rewards[len_interval_mask]
-                        ) / (max_sample_length - l_cache_length)
-                    # rewards = correctness_rewards + len_rewards # currently remove length penalty
                     rewards = correctness_rewards
                     rewards = norm(rewards)
-                else:
-                    rewards = torch.zeros([length], dtype=device)
+                    shuffle_index = torch.randperm(res.shape[0]).to(device)
 
-                accelerate.utils.broadcast(rewards, 0)
+                else:
+                    rewards = torch.zeros([length], dtype=torch.bfloat16, device=device)
+                    correctness_rewards = torch.zeros(
+                        [length], dtype=torch.bfloat16, device=device
+                    )
+                    shuffle_index = torch.randperm(res.shape[0]).to(device)
+                    len_rewards = torch.zeros(
+                        text_end_indices.shape, device=device, dtype=torch.bfloat16
+                    )
+
+                accelerate.utils.broadcast(shuffle_index)
+                accelerate.utils.broadcast(res)
+                accelerate.utils.broadcast(mask)
+                accelerate.utils.broadcast(res_probs)
+                accelerate.utils.broadcast(text_end_indices)
+                accelerate.utils.broadcast(input_ids)
+                accelerate.utils.broadcast(len_rewards)
+                accelerate.utils.broadcast(rewards)
+                accelerate.utils.broadcast(correctness_rewards)
+                accelerate.utils.broadcast(concept_token_probs)
+                accelerate.utils.broadcast(concept_token_indices)
                 accelerator.wait_for_everyone()
 
+                accelerator.print(
+                    rank, shuffle_index, res, shuffle_index.shape, res.shape
+                )
+
+                res = res[shuffle_index]
+                mask = mask[shuffle_index]
+                res_probs = res_probs[shuffle_index]
+                text_end_indices = text_end_indices[shuffle_index]
+                input_ids = input_ids[shuffle_index]
+                len_rewards = len_rewards[shuffle_index]
+                correctness_rewards = correctness_rewards[shuffle_index]
+                concept_token_probs = concept_token_probs[shuffle_index]
+                concept_token_indices = concept_token_indices[shuffle_index]
+
+                msl = torch.tensor(max_sample_length, dtype=torch.bfloat16).to(device)
+                lcl = torch.tensor(l_cache_length, dtype=torch.bfloat16).to(device)
+                # reward normalization to get advantage
+                max_len_mask = len_rewards >= msl
+                if max_len_mask.any():
+                    len_rewards[len_rewards >= msl] = -1
+                cache_len_mask = len_rewards <= lcl
+                if cache_len_mask.any():
+                    len_rewards[len_rewards <= lcl] = 0
+                len_interval_mask = torch.logical_not(
+                    torch.logical_or(max_len_mask, cache_len_mask)
+                )
+                if len_interval_mask.any():
+                    len_rewards[len_interval_mask] = (
+                        l_cache_length - len_rewards[len_interval_mask]
+                    ) / (msl - l_cache_length)
+                # rewards = correctness_rewards + len_rewards # currently remove length penalty
+
                 # truncate to max_train_length if the sampled result is too long
-                if res.shape[1] + input_ids.shape[1] > max_train_length:
-                        res = res[:, : max_train_length - input_ids.shape[1]]
-                        concept_token_indices = concept_token_indices[
-                            :, : max_train_length - input_ids.shape[1]
-                        ]
-                        concept_token_probs = concept_token_probs[
-                            :, : max_train_length - input_ids.shape[1]
-                        ]
-                        mask = mask[:, :max_train_length]
-                        res_probs = res_probs[:, : max_train_length - input_ids.shape[1]]
-                        concept_mask = concept_mask[
-                            :, : max_train_length - input_ids.shape[1]
-                        ]
+                # if res.shape[1] + input_ids.shape[1] > max_train_length:
+                #         res = res[:, : max_train_length - input_ids.shape[1]]
+                #         concept_token_indices = concept_token_indices[
+                #             :, : max_train_length - input_ids.shape[1]
+                #         ]
+                #         concept_token_probs = concept_token_probs[
+                #             :, : max_train_length - input_ids.shape[1]
+                #         ]
+                #         mask = mask[:, :max_train_length]
+                #         res_probs = res_probs[:, : max_train_length - input_ids.shape[1]]
+                #         concept_mask = concept_mask[
+                #             :, : max_train_length - input_ids.shape[1]
+                #         ]
 
             if acc_check_only:
                 accelerator.wait_for_everyone()
