@@ -154,7 +154,9 @@ def sampler(
             model.module.model.model.embed_tokens(topk_indices).transpose(-2, -1)
             * concept_probs.unsqueeze(-2)
         ).sum(dim=-1)
-        original_embeds = model.module.model.model.embed_tokens(selected_index.unsqueeze(-1))
+        original_embeds = model.module.model.model.embed_tokens(
+            selected_index.unsqueeze(-1)
+        )
         if soft_thinking:
             embeds = original_embeds * (1 - concept_mask[:, -1:]).unsqueeze(
                 -1
@@ -170,10 +172,12 @@ def sampler(
         )
         not_ended = text_end_mask.bool()
         if not_ended.any():
-          seq_entropy_sum[not_ended] += entropy_step[not_ended].squeeze(-1)
+            seq_entropy_sum[not_ended] += entropy_step[not_ended].squeeze(-1)
 
         if not gen_all_done and im_end in selected_index:
-            text_end_indices.masked_fill_(text_end_mask.bool() & selected_index == im_end, i)
+            text_end_indices.masked_fill_(
+                text_end_mask.bool() & selected_index == im_end, i
+            )
             text_end_mask.masked_fill_(selected_index == im_end, 0)
             gen_all_done = 1 not in text_end_mask
 

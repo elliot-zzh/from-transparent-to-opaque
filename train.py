@@ -174,9 +174,7 @@ def train():
                         init_res = True
 
                 cleanup()
-                print(rank, res.shape)
                 res = accelerator.gather(res)
-                print(rank, res.shape)
                 res_probs = accelerator.gather(res_probs)
                 concept_token_probs = accelerator.gather(concept_token_probs)
                 concept_token_indices = accelerator.gather(concept_token_indices)
@@ -231,6 +229,19 @@ def train():
                     writer.add_scalar(
                         'rewards/train', correctness_rewards.float().mean().item(), step
                     )
+
+                    rewards = correctness_rewards
+                    rewards = norm(rewards)
+                    shuffle_index = torch.randperm(res.shape[0]).to(device)
+                else:
+                    rewards = torch.zeros([length], dtype=torch.bfloat16, device=device)
+                    correctness_rewards = torch.zeros(
+                        [length], dtype=torch.bfloat16, device=device
+                    )
+                    shuffle_index = torch.randperm(res.shape[0]).to(device)
+                    len_rewards = torch.zeros(
+                        text_end_indices.shape, device=device, dtype=torch.bfloat16
+                    )
                 print(rank, 'correctness rate: ', correctness_rate)
                 writer.add_scalar('correctness_rate/train', correctness_rate, step)
                 writer.add_scalar(
@@ -239,10 +250,13 @@ def train():
                 writer.add_scalar(
                     'correct_length/train',
                     (
-                        (text_end_indices[correctness_rewards == corr_reward]
-                        .float()
-                        .mean()
-                        .item() + 1.0)
+                        (
+                            text_end_indices[correctness_rewards == corr_reward]
+                            .float()
+                            .mean()
+                            .item()
+                            + 1.0
+                        )
                         if (correctness_rewards == corr_reward).any()
                         else max_sample_length
                     ),
@@ -257,20 +271,6 @@ def train():
                 writer.add_scalar(
                     'rewards/train', correctness_rewards.float().mean().item(), step
                 )
-
-                    rewards = correctness_rewards
-                    rewards = norm(rewards)
-                    shuffle_index = torch.randperm(res.shape[0]).to(device)
-
-                else:
-                    rewards = torch.zeros([length], dtype=torch.bfloat16, device=device)
-                    correctness_rewards = torch.zeros(
-                        [length], dtype=torch.bfloat16, device=device
-                    )
-                    shuffle_index = torch.randperm(res.shape[0]).to(device)
-                    len_rewards = torch.zeros(
-                        text_end_indices.shape, device=device, dtype=torch.bfloat16
-                    )
 
                 accelerate.utils.broadcast(shuffle_index)
                 accelerate.utils.broadcast(res)
