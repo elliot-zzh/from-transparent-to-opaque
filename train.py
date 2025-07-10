@@ -242,35 +242,6 @@ def train():
                     len_rewards = torch.zeros(
                         text_end_indices.shape, device=device, dtype=torch.bfloat16
                     )
-                print(rank, 'correctness rate: ', correctness_rate)
-                writer.add_scalar('correctness_rate/train', correctness_rate, step)
-                writer.add_scalar(
-                    'length/train', text_end_indices.float().mean().item() + 1, step
-                )
-                writer.add_scalar(
-                    'correct_length/train',
-                    (
-                        (
-                            text_end_indices[correctness_rewards == corr_reward]
-                            .float()
-                            .mean()
-                            .item()
-                            + 1.0
-                        )
-                        if (correctness_rewards == corr_reward).any()
-                        else max_sample_length
-                    ),
-                    step,
-                )
-                writer.add_text('sampled_text/train', decoded[0], step)
-                writer.add_scalar(
-                    'entropy/train',
-                    monitored_entropy * sample_problem_sub_batch / sample_problem_batch,
-                    step,
-                )
-                writer.add_scalar(
-                    'rewards/train', correctness_rewards.float().mean().item(), step
-                )
 
                 accelerate.utils.broadcast(shuffle_index)
                 accelerate.utils.broadcast(res)
