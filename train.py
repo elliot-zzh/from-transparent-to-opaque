@@ -220,10 +220,13 @@ def train():
                 writer.add_scalar(
                     'correct_length/train',
                     (
-                        (text_end_indices[correctness_rewards == corr_reward]
-                        .float()
-                        .mean()
-                        .item() + 1.0)
+                        (
+                            text_end_indices[correctness_rewards == corr_reward]
+                            .float()
+                            .mean()
+                            .item()
+                            + 1.0
+                        )
                         if (correctness_rewards == corr_reward).any()
                         else max_sample_length
                     ),
@@ -342,7 +345,7 @@ def train():
 
                             shrunk_logits, shrunk_indices = torch.topk(
                                 logits[:, input_ids.shape[1] - 1 :],
-                                k=256,
+                                k=1024,
                                 dim=-1,
                                 largest=True,
                                 sorted=False,
@@ -374,6 +377,7 @@ def train():
                                 self_distillation_factor_pos > 0
                                 and soft_embeds_train_start <= step
                             ):
+                                """
                                 matches = shrunk_indices.unsqueeze(
                                     -2
                                 ) == concept_token_indices[i:end].unsqueeze(-1)
@@ -391,11 +395,19 @@ def train():
                                         dim=-1, keepdim=True
                                     )
                                 )
+                                """
+                                new_concept_probs = torch.log_softmax(
+                                    logits[:, input_ids.shape[1] - 1 :].gather(
+                                        -1, concept_token_indices[i:end]
+                                    )
+                                    / concept_temperature,
+                                    dim=-1,
+                                )
                                 self_distillation_loss = kl_divergence(
-                                    concept_token_probs[i:end, :],
+                                    concept_token_probs[i:end],
                                     new_concept_probs,
                                 )
-                                self_distillation_loss *= concept_mask[i:end, :]
+                                self_distillation_loss *= concept_mask[i:end]
                                 self_distillation_factor = torch.abs(rewards[i:end])
                                 self_distillation_factor[rewards[i:end] > 0] *= (
                                     self_distillation_factor_pos
@@ -405,12 +417,13 @@ def train():
                                 )
                                 self_distillation_loss = (
                                     self_distillation_loss.sum(dim=-1)
-                                    / concept_mask[i:end, :].sum()
+                                    / (
+                                        concept_mask[i:end].to(torch.bfloat16).sum()
+                                        + 1e-10
+                                    )
                                 ) * self_distillation_factor
                                 self_distillation_loss = self_distillation_loss.sum()
-                                loss += (
-                                    self_distillation_factor * self_distillation_loss
-                                )
+                                loss += self_distillation_loss
 
                         accelerator.backward(loss)
                         accumulated_steps += 1

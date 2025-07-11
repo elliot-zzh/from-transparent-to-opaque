@@ -136,10 +136,10 @@ def sampler(
             ],
             dim=-1,
         )
-        concept_probs = F.softmax(logits / concept_temperature, dim=-1).gather(
-            -1, topk_indices
+        concept_probs = F.softmax(
+            logits.gather(-1, topk_indices) / concept_temperature, dim=-1
         )
-        concept_probs /= concept_probs.sum(dim=-1, keepdim=True)
+        # concept_probs /= concept_probs.sum(dim=-1, keepdim=True)
         max_indices = torch.argmax(concept_probs, dim=-1)
         if enable_swapping:  # swapping
             concept_probs = swap(
@@ -170,10 +170,12 @@ def sampler(
         )
         not_ended = text_end_mask.bool()
         if not_ended.any():
-          seq_entropy_sum[not_ended] += entropy_step[not_ended].squeeze(-1)
+            seq_entropy_sum[not_ended] += entropy_step[not_ended].squeeze(-1)
 
         if not gen_all_done and im_end in selected_index:
-            text_end_indices.masked_fill_(text_end_mask.bool() & selected_index == im_end, i)
+            text_end_indices.masked_fill_(
+                text_end_mask.bool() & selected_index == im_end, i
+            )
             text_end_mask.masked_fill_(selected_index == im_end, 0)
             gen_all_done = 1 not in text_end_mask
 
