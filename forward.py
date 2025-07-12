@@ -7,16 +7,16 @@ def model_forward(
     pos,
     kv_cache=None,
 ):  # hacked
-    causal_mask = model.module.model.model._update_causal_mask(
+    causal_mask = model.model.model._update_causal_mask(
         attention_mask=attn_mask,
         input_tensor=hidden_state,
         cache_position=pos,
         past_key_values=kv_cache,
         output_attentions=False,
     )
-    pos_embed = model.module.model.model.rotary_emb(hidden_state, pos[None, :])
+    pos_embed = model.model.model.rotary_emb(hidden_state, pos[None, :])
 
-    for layer in model.module.model.model.layers:
+    for layer in model.model.model.layers:
         hidden_state = layer(
             hidden_state,
             attention_mask=causal_mask.contiguous()
@@ -30,4 +30,4 @@ def model_forward(
             position_embeddings=[i.contiguous() for i in pos_embed],
         )[0]
 
-    return model.module.lm_head(model.module.model.model.norm(hidden_state))
+    return model.lm_head(model.model.model.norm(hidden_state))
