@@ -4,7 +4,7 @@ from peft import LoraConfig, get_peft_model
 from torch.optim import AdamW
 from torch.utils.tensorboard import SummaryWriter
 from transformers import AutoModelForCausalLM
-
+from deepspeed.ops.adam import DeepSpeedCPUAdam
 from config import (
     accelerator,
     device,
@@ -12,7 +12,7 @@ from config import (
     eoth_token,
     im_end_token,
     model_name,
-    model_path,
+    model_path, deepspeed_enabled,
 )
 from data import data_train
 from parameters import (
@@ -58,7 +58,7 @@ model = get_peft_model(model, peft_config)
 model.print_trainable_parameters()
 
 optimizers = [
-    AdamW(model.parameters(), lr=lr),
+    AdamW(model.parameters(), lr=lr) if not deepspeed_enabled() else DeepSpeedCPUAdam(model.parameters(), lr=lr)
 ]
 
 (model, optimizers[0], data_train) = accelerator.prepare(

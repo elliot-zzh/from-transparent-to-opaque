@@ -1,4 +1,4 @@
-from accelerate import Accelerator
+from accelerate import Accelerator, FullyShardedDataParallelPlugin, DeepSpeedPlugin
 
 from parameters import config
 
@@ -9,7 +9,16 @@ eot_token = config['general'].get('eot_token', '<|endoftext|>')
 eoth_token = config['general'].get('eoth_token', '</think>')
 soft_thinking = config['general'].get('soft_thinking', True)
 
+fsdp_plugin = FullyShardedDataParallelPlugin()
+
+deepspeed_plugin = DeepSpeedPlugin()
+
 accelerator = Accelerator(
     mixed_precision='bf16',
+    fsdp_plugin=fsdp_plugin,
 )
 device = accelerator.device
+
+def deepspeed_enabled():
+    return accelerator.state.deepspeed_plugin is None\
+        or "optimizer" not in accelerator.state.deepspeed_plugin.deepspeed_config
