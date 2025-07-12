@@ -213,6 +213,9 @@ def train():
                 """
 
                 print(rank, 'correctness rate: ', correctness_rate)
+                print(
+                    rank, 'average length: ', text_end_indices.float().mean().item() + 1
+                )
                 writer.add_scalar('correctness_rate/train', correctness_rate, step)
                 writer.add_scalar(
                     'length/train', text_end_indices.float().mean().item() + 1, step

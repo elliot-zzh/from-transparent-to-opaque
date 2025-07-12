@@ -174,7 +174,7 @@ def sampler(
 
         if not gen_all_done and im_end in selected_index:
             text_end_indices.masked_fill_(
-                text_end_mask.bool() & selected_index == im_end, i
+                text_end_mask.bool() & (selected_index == im_end), i
             )
             text_end_mask.masked_fill_(selected_index == im_end, 0)
             gen_all_done = 1 not in text_end_mask

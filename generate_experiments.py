@@ -143,7 +143,7 @@ def main():
         {'model.enable_swapping': False},  # ablation: w/o swapping
         {
             'training.self_distillation_factor_pos': 0.5,
-            'training.self_distillation_factor_neg': 0.05,
+            'training.self_distillation_factor_neg': 0.02,
         },  # w/ self-distillation
         {'training.soft_embeds_train_start': 9999},  # non-soft training
         {
@@ -152,6 +152,8 @@ def main():
         },  # CISPO baseline
         {
             'training.soft_embeds_train_start': 100,
+            'training.self_distillation_factor_pos': 0.5,
+            'training.self_distillation_factor_neg': 0.02,
         },  # hybrid: non-soft training and soft training
         {'training.self_distillation_factor_pos': 0},  # 0 -> w/o self-distillation
         {
@@ -160,7 +162,7 @@ def main():
         },
         {
             'training.self_distillation_factor_pos': 1,
-            'training.self_distillation_factor_neg': 0.1,
+            'training.self_distillation_factor_neg': 0.05,
         },
         {
             'training.self_distillation_factor_pos': 0.5,
