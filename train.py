@@ -103,11 +103,9 @@ def train():
     while step <= total_steps:
         for problems, ans in data_train:
             input_ids, problem_attn_mask = tokenize(problems, direct=True)
+            input_ids, problem_attn_mask = accelerator.prepare(input_ids, problem_attn_mask)
             if input_ids.shape[1] >= max_train_length:
                 continue  # skip too long problems
-
-            input_ids = input_ids.to(device)
-            problem_attn_mask = problem_attn_mask.to(device)
             cleanup()
             with torch.no_grad():
                 res = res_probs = text_end_indices = mask = concept_token_probs = (
@@ -328,17 +326,17 @@ def train():
                             else res.shape[0]
                         )
                         with accelerator.autocast():
-                            problem_embeds = model.module.model.model.embed_tokens(
+                            problem_embeds = model.model.model.embed_tokens(
                                 input_ids[i:end]
                             )
                             if soft_embeds_train_start <= step:
                                 soft_embeds = (
-                                    model.module.model.model.embed_tokens(
+                                    model.model.model.embed_tokens(
                                         concept_token_indices[i:end, :-1]
                                     ).transpose(-2, -1)
                                     * concept_token_probs[i:end, :-1].unsqueeze(-2)
                                 ).sum(dim=-1)
-                                original_embeds = model.module.model.model.embed_tokens(
+                                original_embeds = model.model.model.embed_tokens(
                                     res[i:end, :-1]
                                 )
                                 embeds = torch.cat(
@@ -353,7 +351,7 @@ def train():
                                 )
                             else:
                                 embeds = problem_embeds
-                            logits = model.module.model.forward(
+                            logits = model.model.forward(
                                 inputs_embeds=embeds,
                                 attention_mask=mask[i:end, :-1],
                                 use_cache=False,
