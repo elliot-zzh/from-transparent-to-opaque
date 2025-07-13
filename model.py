@@ -57,12 +57,14 @@ peft_config = LoraConfig(
 model = get_peft_model(model, peft_config)
 model.print_trainable_parameters()
 
+model = accelerate.prepare(model)
+
 optimizers = [
     AdamW(model.parameters(), lr=lr, betas=(0.9, 0.95), eps=1e-15),
 ]
 
-(model, optimizers[0], data_train) = accelerator.prepare(
-    model, optimizers[0], data_train
+(optimizers[0], data_train) = accelerator.prepare(
+    optimizers[0], data_train
 )
 
 lossf = nn.CrossEntropyLoss(reduction='none')
