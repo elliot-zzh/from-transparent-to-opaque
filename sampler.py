@@ -32,7 +32,7 @@ def pad_up(tensor: torch.Tensor, dim: int, target: int, filling=0) -> torch.Tens
 torch.compiler.cudagraph_mark_step_begin()
 
 
-@torch.compile(fullgraph=True, mode='max-autotune')
+@torch.compile
 def embed_weighted(
     idxs,
     logits,
