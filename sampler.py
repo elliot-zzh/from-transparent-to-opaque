@@ -29,11 +29,32 @@ def pad_up(tensor: torch.Tensor, dim: int, target: int, filling=0) -> torch.Tens
     return F.pad(tensor, pad, mode='constant', value=filling)
 
 
-@torch.compile
-def swap(x: torch.Tensor, indices1: torch.Tensor, indices2: torch.Tensor, dim: int):
-    tmp = x.gather(dim, indices1).clone()
-    x = torch.scatter(x, index=indices1, dim=dim, src=x.gather(dim, indices2))
-    return torch.scatter(x, index=indices2, dim=dim, src=tmp)
+torch.compiler.cudagraph_mark_step_begin()
+
+
+@torch.compile(fullgraph=True, mode='max-autotune')
+def embed_weighted(
+    idxs,
+    logits,
+    emb,
+    temperature,
+    indices=None,  # for swapping
+    swapping=True,
+):
+    # swap
+    if swapping:
+        indices_ = logits.argmax(dim=-1).unsqueeze(-1).to(torch.int64)
+        indices__ = indices.unsqueeze(-1).to(torch.int64)
+        tmp = logits.gather(-1, indices__).clone()
+        logits = logits.scatter(
+            dim=-1, src=logits.gather(-1, indices_), index=indices__
+        )
+        logits = logits.scatter(dim=-1, src=tmp, index=indices_)
+
+    probs = (logits / temperature).to(torch.float32).softmax(dim=-1)
+    return (emb[idxs] * probs.unsqueeze(-1)).sum(dim=-2).to(torch.bfloat16), probs.to(
+        torch.bfloat16
+    )
 
 
 @accelerator.autocast()
@@ -136,24 +157,16 @@ def sampler(
             ],
             dim=-1,
         )
-        concept_probs = F.softmax(
-            logits.gather(-1, topk_indices) / concept_temperature, dim=-1
+        soft_embeds, concept_probs = embed_weighted(
+            topk_indices,
+            logits.gather(-1, topk_indices),
+            model.model.model.embed_tokens.weight,
+            concept_temperature,
+            selected_choice,
+            enable_swapping,
         )
-        # concept_probs /= concept_probs.sum(dim=-1, keepdim=True)
-        max_indices = torch.argmax(concept_probs, dim=-1)
-        if enable_swapping:  # swapping
-            concept_probs = swap(
-                concept_probs,
-                max_indices.unsqueeze(-1),
-                selected_choice.unsqueeze(-1),
-                dim=-1,
-            )
         concept_token_probs = torch.cat([concept_token_probs, concept_probs], dim=1)
         concept_token_indices = torch.cat([concept_token_indices, topk_indices], dim=1)
-        soft_embeds = (
-            model.model.model.embed_tokens(topk_indices).transpose(-2, -1)
-            * concept_probs.unsqueeze(-2)
-        ).sum(dim=-1)
         original_embeds = model.model.model.embed_tokens(selected_index.unsqueeze(-1))
         if soft_thinking:
             embeds = original_embeds * (1 - concept_mask[:, -1:]).unsqueeze(
