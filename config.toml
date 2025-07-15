@@ -18,9 +18,9 @@ batch_size = 1
 max_train_length = 9999
 max_sample_length = 7680
 l_cache_length = 8192
-concept_temperature = 0.1
-concept_temperature_increase_step = 500
-concept_temperature_max = 0.2
+concept_temperature = 0.02
+concept_temperature_increase_step = 100
+concept_temperature_max = 0.1
 entropy_tao = 0.5
 entropy_k = 9999
 sample_num = 8
@@ -36,8 +36,8 @@ step = 1
 clip_high = 0.3
 clip_low = 0.2
 lr = 1e-6
-self_distillation_factor_pos = 1
-self_distillation_factor_neg = 0.2
+self_distillation_factor_pos = 0.5
+self_distillation_factor_neg = 0.02
 soft_embeds_train_start = 0
 
 [model]

@@ -152,8 +152,6 @@ def main():
         },  # CISPO baseline
         {
             'training.soft_embeds_train_start': 100,
-            'training.self_distillation_factor_pos': 0.5,
-            'training.self_distillation_factor_neg': 0.02,
         },  # hybrid: non-soft training and soft training
         {'training.self_distillation_factor_pos': 0},  # 0 -> w/o self-distillation
         {
@@ -168,6 +166,28 @@ def main():
             'training.self_distillation_factor_pos': 0.5,
             'training.self_distillation_factor_neg': -0.5,
         },  # w/o dual self-distillation factor
+        {
+            'training.concept_temperature': 0.1,
+        },  # w/o progressive concept temperature
+        {
+            'training.concept_temperature': 0.1,
+            'training.self_distillation_factor_pos': 0.0,
+        },  # w/o progressive concept temperature, w/o self-distillation
+        {
+            'training.concept_temperature': 0.1,
+            'training.self_distillation_factor_pos': 0.1,
+            'training.self_distillation_factor_neg': 0.01,
+        },  # w/o progressive concept temperature
+        {
+            'training.concept_temperature': 0.1,
+            'training.self_distillation_factor_pos': 1,
+            'training.self_distillation_factor_neg': 0.05,
+        },  # w/o progressive concept temperature
+        {
+            'training.concept_temperature': 0.1,
+            'training.self_distillation_factor_pos': 0.5,
+            'training.self_distillation_factor_neg': -0.5,
+        },  # w/o dual self-distillation factor, w/o progressive concept temperature
     ]
 
     # Generate all configurations
@@ -200,10 +220,11 @@ def main():
     else:
         print('No configurations generated')
 
+    n_experiments = len(experiments)
     experiments = []
 
     for split in ['aime24', 'math500']:
-        for i in range(9):
+        for i in range(n_experiments):
             experiments.append(
                 {
                     'acc_check_only': True,

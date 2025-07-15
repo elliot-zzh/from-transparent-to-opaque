@@ -21,6 +21,8 @@ from parameters import (
     clip_high,
     clip_low,
     concept_temperature,
+    concept_temperature_increase_step,
+    concept_temperature_max,
     corr_reward,
     entropy_k,
     entropy_tao,
@@ -35,7 +37,6 @@ from parameters import (
     sample_problem_sub_batch,
     sample_temperature,
     sample_topk,
-    save_interval,
     self_distillation_factor_pos,
     self_distillation_factor_neg,
     soft_embeds_train_start,
@@ -111,6 +112,13 @@ def train():
                 res = res_probs = text_end_indices = mask = concept_token_probs = (
                     concept_token_indices
                 ) = concept_mask = monitored_entropy = None
+                concept_temperature_ = min(
+                    concept_temperature_max,
+                    concept_temperature
+                    + (concept_temperature_max - concept_temperature)
+                    * step
+                    / concept_temperature_increase_step,
+                )
                 for i in range(
                     0, input_ids.shape[0] // sample_num, sample_problem_sub_batch
                 ):
@@ -132,7 +140,7 @@ def train():
                             topk=sample_topk,
                             max_length=max_sample_length,
                             temperature=sample_temperature,
-                            concept_temperature=concept_temperature,
+                            concept_temperature=concept_temperature_,
                             entropy_k=entropy_k,
                             entropy_tao=entropy_tao,
                         )
@@ -165,7 +173,7 @@ def train():
                             problem_attn_mask[: sample_problem_sub_batch * sample_num],
                             topk=sample_topk,
                             max_length=max_sample_length,
-                            concept_temperature=concept_temperature,
+                            concept_temperature=concept_temperature_,
                             entropy_k=entropy_k,
                             entropy_tao=entropy_tao,
                         )
