@@ -10,7 +10,7 @@ eoth_token = "</think>"
 soft_thinking = true
 
 [training]
-num_epochs = 1
+num_epochs = 2
 total_steps = 1000
 log_interval = 1
 save_interval = 256
@@ -26,7 +26,7 @@ entropy_k = 9999
 sample_num = 8
 sample_topk = 20
 sample_temperature = 0.7
-sample_problem_batch = 64
+sample_problem_batch = 128
 sample_problem_sub_batch = 4
 acc_check_only = false
 train_gc_interval = 16

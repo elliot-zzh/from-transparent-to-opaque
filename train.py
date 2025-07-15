@@ -372,7 +372,7 @@ def train():
                             ).sum(dim=-1)
                             loss = torch.exp(new_probs - res_probs[i:end, :]).detach()
                             loss = torch.clamp(
-                                loss, 1 - clip_high, 1 + clip_low
+                                loss, 1 - clip_low, 1 + clip_high
                             ).detach()
                             loss *= new_probs
                             loss *= rewards[i:end].unsqueeze(-1)
