@@ -57,6 +57,7 @@ def embed_weighted(
     )
 
 
+@torch.inference_mode()
 @accelerator.autocast()
 def sampler(
     input_ids,
