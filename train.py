@@ -59,6 +59,18 @@ import os
 
 rank = os.environ['CUDA_VISIBLE_DEVICES']
 
+def set_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+set_seed(42)
+
 
 def save_model(steps):
     accelerator.save_model(model, f'./model/rank-{rank}-model-{steps}')
