@@ -37,6 +37,7 @@ from parameters import (
     sample_problem_sub_batch,
     sample_temperature,
     sample_topk,
+    save_interval,
     self_distillation_factor_pos,
     self_distillation_factor_neg,
     soft_embeds_train_start,
@@ -453,11 +454,17 @@ def train():
 
                 cleanup()
 
-        if step > total_steps:
-            break
+            if step % save_interval == 0:
+                print(rank, f'Saving model at step {step}')
+                save_model(step)
+
+            if step > total_steps:
+                break
 
     # Save checkpoint
-    save_model(step)
+    if step % save_interval != 0:
+        print(rank, f'Saving model at step {step}')
+        save_model(step)
 
     writer.close()
     print('all done')
