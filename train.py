@@ -1,7 +1,18 @@
 import torch
 
-torch.manual_seed(42)
 import os
+import random
+
+def set_seed(seed):
+    random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+set_seed(42)
 
 import torch.nn.functional as F
 from tqdm import tqdm
@@ -48,7 +59,6 @@ from sampler import sampler
 from utils import cleanup, tokenize
 
 rank = os.environ['CUDA_VISIBLE_DEVICES']
-
 
 def save_model(steps):
     unwrapped_model = accelerator.unwrap_model(model)
