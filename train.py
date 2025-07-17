@@ -3,6 +3,7 @@ import torch
 import os
 import random
 
+
 def set_seed(seed):
     random.seed(seed)
     torch.manual_seed(seed)
@@ -11,6 +12,7 @@ def set_seed(seed):
 
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
+
 
 set_seed(42)
 
@@ -59,6 +61,7 @@ from sampler import sampler
 from utils import cleanup, tokenize
 
 rank = os.environ['CUDA_VISIBLE_DEVICES']
+
 
 def save_model(steps):
     unwrapped_model = accelerator.unwrap_model(model)
@@ -191,6 +194,15 @@ def train():
                         init_res = True
 
                     cleanup()
+
+                res = res.clone()
+                res_probs = res_probs.clone()
+                concept_token_probs = concept_token_probs.clone()
+                concept_token_indices = concept_token_indices.clone()
+                text_end_indices = text_end_indices.clone()
+                mask = mask.clone()
+                concept_mask = concept_mask.clone()
+                cleanup()
 
                 decoded = tokenizer.batch_decode(res, skip_special_tokens=True)
                 correctness_rewards = torch.Tensor(
@@ -367,7 +379,7 @@ def train():
 
                             shrunk_logits, shrunk_indices = torch.topk(
                                 logits[:, input_ids.shape[1] - 1 :],
-                                k=1024,
+                                k=512,
                                 dim=-1,
                                 largest=True,
                                 sorted=False,
