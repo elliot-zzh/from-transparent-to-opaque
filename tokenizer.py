@@ -3,10 +3,8 @@ from transformers import AutoTokenizer
 from config import model_name, model_path
 from parameters import enable_thinking
 
-prompt = '<|im_start|>user\n Solve the math problem below step by step, and eventually, **repeat your final answer in one single LaTeX `\\boxed{}:`**\n. No need for multi-solution. No need to repeat the solving process in your final answering. Only one `\\boxed` wrapped result is required in your answer. Problem: '  # basic system prompt
-prompt_suffix = (
-    '/think' if enable_thinking else '/no_think'
-) + ' <|im_end|><|im_start|>assistant\n'
+prompt = "Solve the following math problem efficiently and clearly.  The last line of your response should be of the following format: 'Therefore, the final answer is: $\\boxed{{ANSWER}}$. I hope it is correct' (without quotes) where ANSWER is just the final number or expression that solves the problem. Think step by step before answering. Problem: "  # basic system prompt
+prompt_suffix = '<think>\n'
 
 tokenizer = (
     AutoTokenizer.from_pretrained(model_path, use_fast=True)
