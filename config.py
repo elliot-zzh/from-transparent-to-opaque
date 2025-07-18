@@ -19,6 +19,9 @@ accelerator = Accelerator(
 )
 device = accelerator.device
 
+
 def deepspeed_enabled():
-    return accelerator.state.deepspeed_plugin is None\
-        or "optimizer" not in accelerator.state.deepspeed_plugin.deepspeed_config
+    return (
+        accelerator.state.deepspeed_plugin is None
+        or 'optimizer' not in accelerator.state.deepspeed_plugin.deepspeed_config
+    )

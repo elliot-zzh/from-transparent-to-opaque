@@ -118,7 +118,9 @@ def train():
     while step <= total_steps:
         for problems, ans in data_train:
             input_ids, problem_attn_mask = tokenize(problems, direct=True)
-            input_ids, problem_attn_mask = accelerator.prepare(input_ids, problem_attn_mask)
+            input_ids, problem_attn_mask = accelerator.prepare(
+                input_ids, problem_attn_mask
+            )
             if input_ids.shape[1] >= max_train_length:
                 continue  # skip too long problems
             cleanup()
@@ -253,36 +255,40 @@ def train():
                     )
                     print(rank, 'correctness rate: ', correctness_rate)
                     print(
-                    rank, 'average length: ', text_end_indices.float().mean().item() + 1
-                )
+                        rank,
+                        'average length: ',
+                        text_end_indices.float().mean().item() + 1,
+                    )
                     writer.add_scalar('correctness_rate/train', correctness_rate, step)
                     writer.add_scalar(
-                    'length/train', text_end_indices.float().mean().item() + 1, step
-                )
+                        'length/train', text_end_indices.float().mean().item() + 1, step
+                    )
                     writer.add_scalar(
-                    'correct_length/train',
-                    (
+                        'correct_length/train',
                         (
-                            text_end_indices[correctness_rewards == corr_reward]
-                            .float()
-                            .mean()
-                            .item()
-                            + 1.0
-                        )
-                        if (correctness_rewards == corr_reward).any()
-                        else max_sample_length
-                    ),
-                    step,
-                )
+                            (
+                                text_end_indices[correctness_rewards == corr_reward]
+                                .float()
+                                .mean()
+                                .item()
+                                + 1.0
+                            )
+                            if (correctness_rewards == corr_reward).any()
+                            else max_sample_length
+                        ),
+                        step,
+                    )
                     writer.add_text('sampled_text/train', decoded[0], step)
                     writer.add_scalar(
-                    'entropy/train',
-                    monitored_entropy * sample_problem_sub_batch / sample_problem_batch,
-                    step,
-                )
+                        'entropy/train',
+                        monitored_entropy
+                        * sample_problem_sub_batch
+                        / sample_problem_batch,
+                        step,
+                    )
                     writer.add_scalar(
-                    'rewards/train', correctness_rewards.float().mean().item(), step
-                )
+                        'rewards/train', correctness_rewards.float().mean().item(), step
+                    )
 
                     rewards = correctness_rewards
                     rewards = norm(rewards)

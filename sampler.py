@@ -168,7 +168,9 @@ def sampler(
         )
         concept_token_probs = torch.cat([concept_token_probs, concept_probs], dim=1)
         concept_token_indices = torch.cat([concept_token_indices, topk_indices], dim=1)
-        original_embeds = model.module.model.model.embed_tokens(selected_index.unsqueeze(-1))
+        original_embeds = model.module.model.model.embed_tokens(
+            selected_index.unsqueeze(-1)
+        )
         if soft_thinking:
             embeds = original_embeds * (1 - concept_mask[:, -1:]).unsqueeze(
                 -1
