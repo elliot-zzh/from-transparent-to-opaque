@@ -1,3 +1,4 @@
+import torch
 from model import model
 
 
@@ -6,6 +7,7 @@ def model_forward(
     attn_mask,
     pos,
     kv_cache=None,
+    apply_lm_head=True,
 ):  # hacked
     causal_mask = model.model.model._update_causal_mask(
         attention_mask=attn_mask,
@@ -30,4 +32,6 @@ def model_forward(
             position_embeddings=[i.contiguous() for i in pos_embed],
         )[0]
 
+    if not apply_lm_head:
+        return hidden_state
     return model.lm_head(model.model.model.norm(hidden_state))

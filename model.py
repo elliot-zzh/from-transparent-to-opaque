@@ -3,7 +3,7 @@ import torch.nn as nn
 from peft import LoraConfig, get_peft_model
 from torch.optim import AdamW
 from torch.utils.tensorboard import SummaryWriter
-from transformers import AutoModelForCausalLM
+from liger_kernel.transformers import AutoLigerKernelForCausalLM
 
 from config import (
     accelerator,
@@ -27,21 +27,12 @@ from tokenizer import tokenizer
 writer = SummaryWriter(f'runs/experiment-{experiment_id}')
 
 # load the model
-if model_path:
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name,
-        cache_dir=model_path,
-        device_map=device,
-        torch_dtype=torch.bfloat16,
-        attn_implementation='sdpa',
-    )
-else:
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name,
-        device_map=device,
-        torch_dtype=torch.bfloat16,
-        attn_implementation='sdpa',
-    )
+model = AutoLigerKernelForCausalLM.from_pretrained(
+    model_name,
+    device_map=device,
+    torch_dtype=torch.bfloat16,
+    attn_implementation='sdpa',
+)
 model.gradient_checkpointing_enable()
 torch.backends.cuda.enable_flash_sdp(True)
 
@@ -51,14 +42,22 @@ peft_config = LoraConfig(
     task_type='CAUSAL_LM',
     r=lora_r,
     lora_alpha=lora_alpha,
-    target_modules='all-linear',
-    lora_dropout=0.0,
+    target_modules=[
+        'q_proj',
+        'v_proj',
+        'k_proj',
+        'up_proj',
+        'down_proj',
+        'gate_proj',
+        'o_proj',
+    ],
+    lora_dropout=0.005,
 )
 model = get_peft_model(model, peft_config)
 model.print_trainable_parameters()
 
 optimizers = [
-    AdamW(model.parameters(), lr=lr, betas=(0.9, 0.95), eps=1e-15),
+    AdamW(model.parameters(), lr=lr),
 ]
 
 (model, optimizers[0], data_train) = accelerator.prepare(

@@ -149,15 +149,15 @@ def main():
         {
             'training.self_distillation_factor_pos': 0,
             'general.soft_thinking': False,
-        },  # CISPO baseline
+        },  # DAPO baseline
         {
             'training.soft_embeds_train_start': 100,
-        },  # hybrid: non-soft training and soft training
+        },  # hybrid: non-soft training at first and soft training later
         {'training.self_distillation_factor_pos': 0},  # 0 -> w/o self-distillation
         {
             'training.self_distillation_factor_pos': 0.1,
             'training.self_distillation_factor_neg': 0.01,
-        },
+        }, # w/o progressive concept temperature
         {
             'training.self_distillation_factor_pos': 1,
             'training.self_distillation_factor_neg': 0.05,
@@ -166,28 +166,6 @@ def main():
             'training.self_distillation_factor_pos': 0.5,
             'training.self_distillation_factor_neg': -0.5,
         },  # w/o dual self-distillation factor
-        {
-            'training.concept_temperature': 0.1,
-        },  # w/o progressive concept temperature
-        {
-            'training.concept_temperature': 0.1,
-            'training.self_distillation_factor_pos': 0.0,
-        },  # w/o progressive concept temperature, w/o self-distillation
-        {
-            'training.concept_temperature': 0.1,
-            'training.self_distillation_factor_pos': 0.1,
-            'training.self_distillation_factor_neg': 0.01,
-        },  # w/o progressive concept temperature
-        {
-            'training.concept_temperature': 0.1,
-            'training.self_distillation_factor_pos': 1,
-            'training.self_distillation_factor_neg': 0.05,
-        },  # w/o progressive concept temperature
-        {
-            'training.concept_temperature': 0.1,
-            'training.self_distillation_factor_pos': 0.5,
-            'training.self_distillation_factor_neg': -0.5,
-        },  # w/o dual self-distillation factor, w/o progressive concept temperature
     ]
 
     # Generate all configurations

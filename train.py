@@ -15,6 +15,7 @@ def set_seed(seed):
 
 
 set_seed(42)
+torch.set_float32_matmul_precision('high')
 
 import torch.nn.functional as F
 from tqdm import tqdm
@@ -60,7 +61,20 @@ from parameters import (
 from sampler import sampler
 from utils import cleanup, tokenize
 
+from liger_kernel.chunked_loss.grpo_loss import LigerFusedLinearGRPOLoss
+
+from forward import model_forward
+
 rank = os.environ['CUDA_VISIBLE_DEVICES']
+
+
+dapo_lossf = LigerFusedLinearGRPOLoss(
+    beta=0.0,
+    use_ref_model=False,
+    epsilon_low=clip_low,
+    epsilon_high=clip_high,
+    loss_type='bnpo',
+)
 
 
 def save_model(steps):
@@ -369,44 +383,27 @@ def train():
                                 )
                             else:
                                 embeds = problem_embeds
-                            logits = model.model.forward(
-                                inputs_embeds=embeds,
-                                attention_mask=mask[i:end, :-1],
-                                use_cache=False,
-                                output_hidden_states=False,
-                                return_dict=True,
-                            ).logits
 
-                            shrunk_logits, shrunk_indices = torch.topk(
-                                logits[:, input_ids.shape[1] - 1 :],
-                                k=512,
-                                dim=-1,
-                                largest=True,
-                                sorted=False,
-                            )
-                            shrunk_logits = shrunk_logits.float()
+                            hidden = model_forward(
+                                hidden_state=embeds,
+                                attn_mask=mask[i:end, :-1],
+                                apply_lm_head=False,
+                                pos=torch.arange(0, embeds.shape[1])
+                                .long()
+                                .to(embeds.device),
+                            )[:, input_ids.shape[1] - 1 :]
 
-                            # compute CISPO loss
+                            # compute DAPO loss
                             target = res[i:end, :]
-                            target[target >= logits.shape[-1]] = 0
-                            new_probs = (
-                                F.log_softmax(shrunk_logits, dim=-1)
-                                * (shrunk_indices == target.unsqueeze(-1)).float()
-                            ).sum(dim=-1)
-                            loss = torch.exp(new_probs - res_probs[i:end, :]).detach()
-                            loss = torch.clamp(
-                                loss, 1 - clip_low, 1 + clip_high
-                            ).detach()
-                            loss *= new_probs
-                            loss *= rewards[i:end].unsqueeze(-1)
-                            loss *= mask[i:end, input_ids.shape[1] :]
-                            loss = (
-                                (loss.sum(dim=-1))
-                                / (text_end_indices[i:end] + 1).sum()
-                                * (
-                                    -1
-                                )  # here we want to maximaize it, aligned with DAPO target
-                            )
+                            target[target >= model.lm_head.weight.shape[-1]] = 0
+                            loss = dapo_lossf(
+                                hidden,
+                                model.lm_head.weight,
+                                target,
+                                mask[i:end, input_ids.shape[1] :],
+                                rewards[i:end],
+                                ref_per_token_logps=res_probs[i:end],
+                            )[0] * (-1)
                             if (
                                 self_distillation_factor_pos > 0
                                 and soft_embeds_train_start <= step
@@ -430,11 +427,17 @@ def train():
                                     )
                                 )
                                 """
+                                concept_temperature_ = min(
+                                    concept_temperature_max,
+                                    concept_temperature
+                                    + (concept_temperature_max - concept_temperature)
+                                    * step
+                                    / concept_temperature_increase_step,
+                                )
+                                logits = model.lm_head(hidden)
                                 new_concept_probs = torch.log_softmax(
-                                    logits[:, input_ids.shape[1] - 1 :].gather(
-                                        -1, concept_token_indices[i:end]
-                                    )
-                                    / concept_temperature,
+                                    logits.gather(-1, concept_token_indices[i:end])
+                                    / concept_temperature_,
                                     dim=-1,
                                 )
                                 self_distillation_loss = kl_divergence(
@@ -451,10 +454,7 @@ def train():
                                 )
                                 self_distillation_loss = (
                                     self_distillation_loss.sum(dim=-1)
-                                    / (
-                                        concept_mask[i:end].to(torch.bfloat16).sum()
-                                        + 1e-10
-                                    )
+                                    / (concept_mask[i:end].float().sum() + 1e-10)
                                 ) * self_distillation_factor
                                 self_distillation_loss = self_distillation_loss.sum()
                                 loss += self_distillation_loss
@@ -472,7 +472,7 @@ def train():
                     zero_grad_optimizer()
                     step += 1
 
-                print(rank, f'Step {step}, Loss: {loss.item():.8f}')
+                print(rank, f'Step {step}, Loss: {loss.item():.5f}')
 
                 cleanup()
 

@@ -118,7 +118,7 @@ def sampler(
 
     seq_entropy_sum = torch.zeros(problem_batch_size, device=device)
 
-    for i in tqdm(range(max_length), desc='sampling progress'):
+    for i in tqdm(range(max_length), desc='sampling progress', miniters=8):
         sample_probs = F.softmax(logits / temperature, dim=-1)
         sample_probs, topk_indices = torch.topk(
             sample_probs,

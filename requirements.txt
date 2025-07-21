@@ -11,3 +11,4 @@ huggingface_hub~=0.31.1
 hf-xet~=1.1.0
 math_verify~=0.7.0
 toml~=0.10.2
+liger_kernel==0.6.0
