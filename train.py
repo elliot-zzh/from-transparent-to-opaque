@@ -109,9 +109,10 @@ def linear_interpl(
     return torch.where(mask_low, low, torch.where(mask_high, high, mid_values))
 
 
-def norm(x: torch.Tensor) -> torch.Tensor:
+def norm(x: torch.Tensor, group_size: int) -> torch.Tensor:
+    x = x.view(-1, group_size)
     x = x - x.mean()
-    return x / (x**2).mean() * 0.5
+    return (x / (x**2).mean() * 0.5).view(-1)
 
 
 def kl_divergence(p: torch.Tensor, q: torch.Tensor, eps: float = 1e-10):
@@ -290,6 +291,9 @@ def train():
                     'rewards/train', correctness_rewards.float().mean().item(), step
                 )
 
+                # normalize rewards
+                correctness_rewards = norm(correctness_rewards, group_size=sample_num)
+
                 shuffle_index = torch.randperm(res.shape[0])
                 res = res[shuffle_index]
                 mask = mask[shuffle_index]
@@ -317,7 +321,6 @@ def train():
                     ) / (max_sample_length - l_cache_length)
                 # rewards = correctness_rewards + len_rewards # currently remove length penalty
                 rewards = correctness_rewards
-                rewards = norm(rewards)
 
                 # truncate to max_train_length if the sampled result is too long
                 if res.shape[1] + input_ids.shape[1] > max_train_length:

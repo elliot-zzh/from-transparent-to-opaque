@@ -157,7 +157,7 @@ def main():
         {
             'training.self_distillation_factor_pos': 0.1,
             'training.self_distillation_factor_neg': 0.01,
-        }, # w/o progressive concept temperature
+        },  # w/o progressive concept temperature
         {
             'training.self_distillation_factor_pos': 1,
             'training.self_distillation_factor_neg': 0.05,
