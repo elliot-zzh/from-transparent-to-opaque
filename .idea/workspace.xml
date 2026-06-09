@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="b4235b6a-bc39-46d5-b1c6-17bc922dd3dc" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/fsdp.yml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/setup.sh" beforeDir="false" afterPath="$PROJECT_DIR$/setup.sh" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="Python Script" />
+      </list>
+    </option>
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 6
+}</component>
+  <component name="ProjectId" id="2wRi4CttzfSqdWqPxjENsli1p8y" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="openDirectoriesWithSingleClick" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;Python.collect.executor&quot;: &quot;Run&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;SHELLCHECK.PATH&quot;: &quot;/Users/ethangoh/Library/Application Support/JetBrains/PyCharm2024.3/plugins/Shell Script/shellcheck&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;st-pp&quot;,
+    &quot;junie.onboarding.icon.badge.shown&quot;: &quot;true&quot;,
+    &quot;last_opened_file_path&quot;: &quot;/Users/ethangoh/Developer/from-transparent-to-opaque&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  }
+}</component>
+  <component name="RecentsManager">
+    <key name="CopyFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$" />
+      <recent name="$PROJECT_DIR$/data/MATH" />
+    </key>
+    <key name="MoveFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$" />
+      <recent name="$PROJECT_DIR$/data" />
+      <recent name="$PROJECT_DIR$/data/GSM8k" />
+    </key>
+  </component>
+  <component name="RunManager">
+    <configuration name="math_dataset" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="from-transparent-to-opaque" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/dataset" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/dataset/math_dataset.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <recent_temporary>
+      <list>
+        <item itemvalue="Python.math_dataset" />
+      </list>
+    </recent_temporary>
+  </component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-js-predefined-d6986cc7102b-09060db00ec0-JavaScript-PY-251.26927.74" />
+        <option value="bundled-python-sdk-657d8234b839-64d779b69b7a-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-251.26927.74" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="b4235b6a-bc39-46d5-b1c6-17bc922dd3dc" name="Changes" comment="" />
+      <created>1746010594125</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1746010594125</updated>
+      <workItem from="1746010595686" duration="1199000" />
+      <workItem from="1746011808257" duration="4000" />
+      <workItem from="1746011899309" duration="2709000" />
+      <workItem from="1746017359530" duration="5791000" />
+      <workItem from="1746088838781" duration="8612000" />
+      <workItem from="1746169811101" duration="22252000" />
+      <workItem from="1746272772597" duration="11126000" />
+      <workItem from="1746362783247" duration="8937000" />
+      <workItem from="1746524056188" duration="1865000" />
+      <workItem from="1746833851136" duration="2583000" />
+      <workItem from="1746852092264" duration="4633000" />
+      <workItem from="1746870253712" duration="22089000" />
+      <workItem from="1747024374358" duration="5231000" />
+      <workItem from="1747369282947" duration="3280000" />
+      <workItem from="1747815615348" duration="3174000" />
+      <workItem from="1748055240778" duration="52000" />
+      <workItem from="1748062358548" duration="4716000" />
+      <workItem from="1748069286886" duration="3451000" />
+      <workItem from="1748074020032" duration="1111000" />
+      <workItem from="1748075951877" duration="10258000" />
+      <workItem from="1748661330939" duration="6255000" />
+      <workItem from="1748696918954" duration="6747000" />
+      <workItem from="1749027771597" duration="5984000" />
+      <workItem from="1749287979591" duration="2604000" />
+      <workItem from="1749298523928" duration="1353000" />
+      <workItem from="1750840371220" duration="3589000" />
+      <workItem from="1751106813780" duration="3607000" />
+      <workItem from="1751111209960" duration="2945000" />
+      <workItem from="1751114171402" duration="2073000" />
+      <workItem from="1751444657590" duration="2222000" />
+      <workItem from="1751676046239" duration="1289000" />
+      <workItem from="1751979405395" duration="1704000" />
+      <workItem from="1751981273730" duration="4070000" />
+      <workItem from="1752039386388" duration="20000" />
+      <workItem from="1752040207938" duration="374000" />
+      <workItem from="1752100761841" duration="2096000" />
+      <workItem from="1752127682103" duration="491000" />
+      <workItem from="1752131585495" duration="3817000" />
+      <workItem from="1752238441527" duration="896000" />
+      <workItem from="1752239380971" duration="7168000" />
+      <workItem from="1752325237215" duration="681000" />
+      <workItem from="1752380654003" duration="7000" />
+      <workItem from="1752403243150" duration="1267000" />
+      <workItem from="1752407332689" duration="4166000" />
+      <workItem from="1752481289629" duration="6369000" />
+      <workItem from="1752646279259" duration="11000" />
+      <workItem from="1752812500423" duration="1528000" />
+      <workItem from="1752915481014" duration="7022000" />
+    </task>
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+  <component name="com.intellij.coverage.CoverageDataManagerImpl">
+    <SUITE FILE_PATH="coverage/from_transparent_to_opaque$collect.coverage" NAME="collect Coverage Results" MODIFIED="1746149164638" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/dataset" />
+  </component>
+</project>
